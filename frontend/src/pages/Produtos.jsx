@@ -22,6 +22,60 @@ function formatDate(value) {
   return year ? `${day}/${month}/${year.slice(2)}` : value;
 }
 
+function parseAnalysis(produto) {
+  if (!produto?.analysis) return null;
+  if (typeof produto.analysis === "string") {
+    try {
+      return JSON.parse(produto.analysis);
+    } catch {
+      return null;
+    }
+  }
+  return produto.analysis;
+}
+
+function AnalysisModal({ produto, onClose }) {
+  const data = parseAnalysis(produto);
+  if (!data) return null;
+  const analise = data.analise || data;
+  return (
+    <Modal open title={`🧠 Análise — ${produto.nome}`} onClose={onClose}>
+      {analise.resumo && <p style={{ fontSize: "14px", marginBottom: "14px" }}><strong>Resumo:</strong> {analise.resumo}</p>}
+      {Array.isArray(analise.angulos_copy) && (
+        <div style={{ marginBottom: "12px" }}>
+          <strong style={{ fontSize: "13px" }}>Ângulos de copy</strong>
+          <ul className="placeholder-list">{analise.angulos_copy.map((item, i) => <li key={i}>{item}</li>)}</ul>
+        </div>
+      )}
+      {Array.isArray(analise.palavras_chave) && (
+        <div style={{ marginBottom: "12px" }}>
+          <strong style={{ fontSize: "13px" }}>Palavras-chave sugeridas</strong>
+          <ul className="placeholder-list">{analise.palavras_chave.map((item, i) => <li key={i}>{item}</li>)}</ul>
+        </div>
+      )}
+      {Array.isArray(analise.negativas_sugeridas) && (
+        <div style={{ marginBottom: "12px" }}>
+          <strong style={{ fontSize: "13px" }}>Negativas sugeridas</strong>
+          <ul className="placeholder-list">{analise.negativas_sugeridas.map((item, i) => <li key={i}>{item}</li>)}</ul>
+        </div>
+      )}
+      {analise.brief_presell && (
+        <div style={{ marginBottom: "12px" }}>
+          <strong style={{ fontSize: "13px" }}>Brief da presell</strong>
+          <p style={{ fontSize: "14px", color: "var(--text-muted)", marginTop: "6px" }}>{analise.brief_presell}</p>
+        </div>
+      )}
+      {analise.publico && (
+        <div>
+          <strong style={{ fontSize: "13px" }}>Público</strong>
+          <p style={{ fontSize: "14px", color: "var(--text-muted)", marginTop: "6px" }}>{analise.publico}</p>
+        </div>
+      )}
+      <p className="placeholder-note">Análise gerada por: {data.provider || "IA"}</p>
+    </Modal>
+  );
+}
+
 export default function Produtos() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -34,6 +88,8 @@ export default function Produtos() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [analysisProduto, setAnalysisProduto] = useState(null);
+  const [analisando, setAnalisando] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -108,12 +164,34 @@ export default function Produtos() {
   };
 
   const aprovar = async (produto) => {
+    setAnalisando(produto.id);
     try {
-      await api.aprovarProduto(produto.id);
+      const updated = await api.aprovarProduto(produto.id);
       toast(`"${produto.nome}" aprovado!`);
       await load();
+      if (updated.analysis) {
+        setAnalysisProduto(updated);
+      } else if (updated.analysis_error) {
+        toast(`Análise IA indisponível: ${updated.analysis_error}`);
+      }
     } catch (err) {
       toast(err.message || "Falha ao aprovar.");
+    } finally {
+      setAnalisando(null);
+    }
+  };
+
+  const analisar = async (produto) => {
+    setAnalisando(produto.id);
+    try {
+      const updated = await api.analisarProduto(produto.id);
+      toast("Análise gerada!");
+      await load();
+      setAnalysisProduto(updated);
+    } catch (err) {
+      toast(err.message || "Falha na análise.");
+    } finally {
+      setAnalisando(null);
     }
   };
 
@@ -133,7 +211,7 @@ export default function Produtos() {
       <h1>Seus Produtos</h1>
       <p className="subtitle">Analise, aprove e anuncie seus produtos.</p>
 
-      <div className="flex-between mb-20" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <input
           type="text"
           placeholder="Produto..."
@@ -182,13 +260,28 @@ export default function Produtos() {
                     <>
                       <span title="Editar" onClick={() => openEdit(produto)}>✏️</span>
                       <span title="AdsWords (palavras-chave)" onClick={() => navigate("/adswords")}>✈️ AdsWord</span>
-                      <span title="Aprovar" onClick={() => aprovar(produto)}>✓ Aprovar</span>
+                      <span
+                        title={analisando === produto.id ? "Aprovando (análise IA se LLM ativo)…" : "Aprovar"}
+                        onClick={() => aprovar(produto)}
+                      >
+                        {analisando === produto.id ? "⏳" : "✓ Aprovar"}
+                      </span>
                     </>
                   ) : (
                     <>
                       <span title="AdsPages (criar presell)" onClick={() => navigate("/adspages")}>🛡️ AdsPages</span>
                       <span title="AdsCreator (criar campanha)" onClick={() => navigate("/adscreator")}>🎯 AdsCreator</span>
                       <span title="AdsWords (palavras-chave)" onClick={() => navigate("/adswords")}>✈️ AdsWord</span>
+                      {parseAnalysis(produto) ? (
+                        <span title="Ver análise IA" onClick={() => setAnalysisProduto(produto)}>🧠</span>
+                      ) : (
+                        <span
+                          title={analisando === produto.id ? "Analisando com IA…" : "Gerar análise IA"}
+                          onClick={() => analisar(produto)}
+                        >
+                          {analisando === produto.id ? "⏳" : "🔬"}
+                        </span>
+                      )}
                       <span title="Excluir" onClick={() => remover(produto)}>🗑️</span>
                     </>
                   )}
@@ -236,6 +329,8 @@ export default function Produtos() {
           </button>
         </form>
       </Modal>
+
+      <AnalysisModal produto={analysisProduto} onClose={() => setAnalysisProduto(null)} />
     </section>
   );
 }

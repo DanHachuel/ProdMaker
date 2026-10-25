@@ -1,4 +1,10 @@
 # ProdMaker — dependências Python (instaladas pelo launcher em PRODMAKER_HOME/venv)
-# Parte 1 — núcleo
+# Núcleo
 fastapi
 uvicorn[standard]
+# LLM (pool NVIDIA NIM + Google Gemini)
+openai
+google-genai
+# Infoprodutos (Markdown -> HTML -> PDF)
+markdown
+xhtml2pdf

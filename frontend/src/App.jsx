@@ -7,6 +7,9 @@ import ToastProvider from "./components/Toast";
 import Login from "./pages/Login";
 import Produtos from "./pages/Produtos";
 import Dashboard from "./pages/Dashboard";
+import ApiKeys from "./pages/ApiKeys";
+import Studio from "./pages/Studio";
+import Biblioteca from "./pages/Biblioteca";
 import * as Pages from "./pages/placeholders";
 
 const AppCtx = createContext(null);
@@ -89,8 +92,8 @@ export default function App() {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/hosting/dominios" element={<Pages.Dominios />} />
                 <Route path="/hosting/paginas" element={<Pages.PaginasCriadas />} />
-                <Route path="/studio" element={<Pages.Studio />} />
-                <Route path="/studio/biblioteca" element={<Pages.Biblioteca />} />
+                <Route path="/studio" element={<Studio />} />
+                <Route path="/studio/biblioteca" element={<Biblioteca />} />
                 <Route path="/adspages" element={<Pages.AdsPages />} />
                 <Route path="/adswords" element={<Pages.AdsWords />} />
                 <Route path="/adscreator" element={<Pages.AdsCreator />} />
@@ -100,7 +103,7 @@ export default function App() {
                 <Route path="/adsbot" element={<Pages.AdsBot />} />
                 <Route path="/pinterest" element={<Pages.Pinterest />} />
                 <Route path="/contas-google" element={<Pages.ContasGoogle />} />
-                <Route path="/api-keys" element={<Pages.ApiKeys />} />
+                <Route path="/api-keys" element={<ApiKeys />} />
                 <Route path="/notificacoes" element={<Pages.Notificacoes />} />
                 <Route path="/logs" element={<Pages.Logs />} />
                 <Route path="/faq" element={<Pages.Faq />} />

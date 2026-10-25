@@ -3,6 +3,32 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.03 — 2026-10-25
+
+- **Parte 3 — Motor LLM + Chaves de API + Análise de Produto por IA + Studio de PDF.**
+- **Motor LLM (`app/services/llm.py`):** pool NVIDIA NIM (compatível OpenAI) + Google Gemini
+  com prioridade (1 = primeiro) e failover apenas em erros transitórios (quota, timeout,
+  transporte, 429/5xx); erro de credencial/payload registrado com attribution e nunca
+  mascarado. Importações preguiçosas — o servidor sobe mesmo sem deps de LLM instaladas.
+- **Chaves de API funcional:** página com cards (AdsX api-grid) para NVIDIA, Gemini, Gamma,
+  GitHub, Cloudflare, Telegram, Pinterest, Google Ads, Meta, TikTok e Canva (em breve);
+  modais por card; LLMs com modelo/prioridade/ativo + **Testar chamada** (read-only, mostra
+  latência e modelo); demais integrações com campos por serviço salvos no storage local.
+- **Análise de produto por IA:** ao **✓ Aprovar**, se houver LLM ativo o produto recebe o
+  plano de ataque (resumo, ângulos de copy, palavras-chave, negativas, brief da presell,
+  público) via `seed/prompts/analise-produto.md`; modal 🧠 na listagem e regeneração via 🔬.
+  Sem LLM configurado a aprovação funciona normalmente (sem travas).
+- **Studio (Criar Infoproduto):** formulário completo (modo, formato, título, nicho, dor,
+  avatar, resultado, prompt) → Modo Rápido (LLM → Markdown → HTML A4 → PDF via xhtml2pdf,
+  sem dependências de sistema) e Modo Premium (Gamma AI: `POST /v1.0/generations` com
+  `exportAs: "pdf"`, polling e download); resultado com download direto do PDF.
+- **Biblioteca de Infoprodutos:** tabela (criado, título, formato, modo) com download de PDF,
+  visualização do Markdown e exclusão.
+- Backend reorganizado em módulos: `services/store.py` (settings), `services/database.py`
+  (SQLite + migração: coluna `analysis` em produtos + tabela `infoprodutos`),
+  `services/llm.py`, `services/pdf.py`, `services/gamma.py`, `api/llm.py`, `api/infoprodutos.py`.
+- requirements.txt: + openai, google-genai, markdown, xhtml2pdf.
+
 ## 0.1.02 — 2026-10-25
 
 - Launcher: caixa da URL em ASCII puro (evita mojibake de caracteres Unicode no CMD/Windows).

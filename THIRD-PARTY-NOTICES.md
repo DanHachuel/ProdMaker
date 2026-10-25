@@ -10,6 +10,14 @@ Esta lista cresce a cada fase conforme novas integrações são ativadas.
 - **Pydantic** — MIT License — https://github.com/pydantic/pydantic
 - **Node.js** — MIT License — https://nodejs.org
 
+## Runtime (Parte 3)
+
+- **openai (SDK Python)** — Apache-2.0 — https://github.com/openai/openai-python (usado no endpoint compatível com OpenAI da NVIDIA NIM)
+- **google-genai (SDK oficial Google Gemini)** — Apache-2.0 — https://github.com/googleapis/python-genai
+- **Markdown** — BSD-3-Clause — https://github.com/Python-Markdown/markdown
+- **xhtml2pdf** (inclui ReportLab) — MIT/Apache-2.0 — https://github.com/xhtml2pdf/xhtml2pdf
+- **httpx** (transitivo do openai; usado pelo cliente Gamma) — BSD-3-Clause — https://github.com/encode/httpx
+
 ## Integrações planejadas (fases futuras)
 
 - **google-ads-mcp-rw** — Google Ads MCP (write) — https://pypi.org/project/google-ads-mcp-rw

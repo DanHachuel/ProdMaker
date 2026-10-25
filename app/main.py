@@ -3,7 +3,6 @@ import hashlib
 import hmac
 import json
 import os
-import sqlite3
 import time
 from pathlib import Path
 
@@ -12,50 +11,30 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-APP_VERSION = "0.1.02"
+from .services.database import ensure_db, get_db, now_str, row_to_dict
+from .services.llm import LLMError, analyze_product, list_providers
+from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_settings, save_settings
+
+APP_VERSION = "0.1.03"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 
-PRODMAKER_HOME = Path(os.environ.get("PRODMAKER_HOME", str(Path.home() / "ProdMaker")))
-STORAGE = PRODMAKER_HOME / "storage"
-STATE = STORAGE / "state"
 DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 LEGAL_DIR = Path(__file__).resolve().parent.parent / "legal"
 
 app = FastAPI(title="ProdMaker", version=APP_VERSION)
 
+from .api import infoprodutos as infoprodutos_router  # noqa: E402
+from .api import llm as llm_router  # noqa: E402
+
+app.include_router(llm_router.router)
+app.include_router(infoprodutos_router.router)
+
+ensure_db()
 
 # ---------------------------------------------------------------------------
-# Storage helpers (leitura protegida: nunca sobrescrever dados corrompidos)
+# Auth local (v1: validação simulada; estrutura pronta para validação remota)
 # ---------------------------------------------------------------------------
-
-
-def ensure_state_dir() -> None:
-    STATE.mkdir(parents=True, exist_ok=True)
-
-
-def get_settings() -> dict:
-    settings_path = STATE / "settings.json"
-    if not settings_path.exists():
-        return {"schema": 1, "port": 8188, "language": "pt-BR", "theme": "light", "api_keys": {}, "llm": {"providers": []}}
-    try:
-        return json.loads(settings_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="settings.json corrompido — leitura protegida. Restaure o arquivo manualmente.")
-
-
-def save_settings(data: dict) -> dict:
-    ensure_state_dir()
-    settings_path = STATE / "settings.json"
-    if settings_path.exists():
-        try:
-            json.loads(settings_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            backup = STATE / "settings.corrupt.json"
-            backup.write_text(settings_path.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
-            raise HTTPException(status_code=500, detail="settings.json corrompido — cópia preservada em settings.corrupt.json.")
-    settings_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    return data
 
 
 def get_secret() -> bytes:
@@ -64,54 +43,6 @@ def get_secret() -> bytes:
     if not secret_path.exists():
         secret_path.write_bytes(os.urandom(32))
     return secret_path.read_bytes()
-
-
-# ---------------------------------------------------------------------------
-# Banco de dados local (SQLite via stdlib)
-# ---------------------------------------------------------------------------
-
-
-def get_db():
-    ensure_state_dir()
-    conn = sqlite3.connect(STATE / "prodmaker.db")
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def ensure_db() -> None:
-    with get_db() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS produtos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome TEXT NOT NULL,
-                plataforma TEXT NOT NULL DEFAULT 'Outro',
-                link_afiliado TEXT NOT NULL DEFAULT '',
-                comissao REAL NOT NULL DEFAULT 0,
-                preco REAL NOT NULL DEFAULT 0,
-                nicho TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'em_analise',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-
-
-ensure_db()
-
-
-def now_str() -> str:
-    return time.strftime("%Y-%m-%d %H:%M:%S")
-
-
-def row_to_dict(row) -> dict:
-    return {key: row[key] for key in row.keys()}
-
-
-# ---------------------------------------------------------------------------
-# Auth local (v1: validação simulada; estrutura pronta para validação remota)
-# ---------------------------------------------------------------------------
 
 
 def make_token(email: str) -> str:
@@ -180,7 +111,7 @@ def auth_session(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Produtos (Seus Produtos — em análise / aprovados)
+# Produtos (Seus Produtos — em análise / aprovados, com análise por IA)
 # ---------------------------------------------------------------------------
 
 
@@ -241,12 +172,45 @@ def delete_produto(produto_id: int):
 
 @app.post("/api/produtos/{produto_id}/aprovar")
 def aprovar_produto(produto_id: int):
+    """Aprova o produto e, se houver LLM ativo, gera a análise (plano de ataque).
+
+    Sem LLM configurado a aprovação acontece normalmente (sem travas de pré-registo);
+    a análise fica pendente e pode ser gerada depois via /api/produtos/{id}/analisar.
+    """
     with get_db() as conn:
         cursor = conn.execute("UPDATE produtos SET status = 'aprovado', updated_at = ? WHERE id = ?", (now_str(), produto_id))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Produto não encontrado.")
         row = conn.execute("SELECT * FROM produtos WHERE id = ?", (produto_id,)).fetchone()
-    return row_to_dict(row)
+    produto = row_to_dict(row)
+    analysis = None
+    if list_providers():
+        try:
+            analysis = analyze_product(produto)
+            with get_db() as conn:
+                conn.execute("UPDATE produtos SET analysis = ? WHERE id = ?", (json.dumps(analysis, ensure_ascii=False), produto_id))
+            produto["analysis"] = analysis
+        except LLMError as exc:
+            produto["analysis_error"] = str(exc)
+    return produto
+
+
+@app.post("/api/produtos/{produto_id}/analisar")
+def analisar_produto(produto_id: int):
+    """Gera (ou regenera) a análise de IA de um produto aprovado."""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM produtos WHERE id = ?", (produto_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Produto não encontrado.")
+    produto = row_to_dict(row)
+    try:
+        analysis = analyze_product(produto)
+    except LLMError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    with get_db() as conn:
+        conn.execute("UPDATE produtos SET analysis = ?, updated_at = ? WHERE id = ?", (json.dumps(analysis, ensure_ascii=False), now_str(), produto_id))
+    produto["analysis"] = analysis
+    return produto
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +225,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.2"}
+    return {"version": APP_VERSION, "canonical": "0.1.3"}
 
 
 @app.get("/api/settings")
@@ -304,8 +268,7 @@ def _spa_index():
 .box{max-width:520px;padding:40px;text-align:center}h1{color:#7C3AED}.muted{color:#64748b}</style></head>
 <body><div class="box"><h1>🚀 ProdMaker</h1>
 <p>O backend está rodando.</p>
-<p class="muted">O frontend (React + Vite + Tailwind) será publicado na Parte 2.</p>
-<p class="muted">API: <code>/api/health</code> · Legal: <code>/legal/</code></p></div></body></html>"""
+<p class="muted">Frontend build pendente — rode <code>npm run build</code> em frontend/.</p></div></body></html>"""
     )
 
 

@@ -30,4 +30,13 @@ export const api = {
   updateProduto: (id, body) => request(`/api/produtos/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteProduto: (id) => request(`/api/produtos/${id}`, { method: "DELETE" }),
   aprovarProduto: (id) => request(`/api/produtos/${id}/aprovar`, { method: "POST" }),
+  analisarProduto: (id) => request(`/api/produtos/${id}/analisar`, { method: "POST" }),
+
+  llmProviders: () => request("/api/llm/providers"),
+  llmTest: (id) => request("/api/llm/test", { method: "POST", body: JSON.stringify({ id }) }),
+
+  infoprodutos: () => request("/api/infoprodutos"),
+  createInfoproduto: (body) => request("/api/infoprodutos", { method: "POST", body: JSON.stringify(body) }),
+  deleteInfoproduto: (id) => request(`/api/infoprodutos/${id}`, { method: "DELETE" }),
+  infoprodutoMarkdown: (id) => request(`/api/infoprodutos/${id}/markdown`),
 };

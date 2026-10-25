@@ -27,29 +27,6 @@ export const PaginasCriadas = () => (
   />
 );
 
-export const Studio = () => (
-  <PlaceholderPage
-    emoji="📖"
-    title="Infoprodutos — Criar Infoproduto"
-    subtitle="Gere e-books, planilhas e mini-cursos em PDF com IA (3 modos)."
-    items={[
-      "Modo Rápido: LLM gera Markdown → HTML A4 → PDF (WeasyPrint)",
-      "Modo Premium: Gamma AI API com exportação em PDF",
-      "Modo Canva: conector MCP para criação manual",
-      "Nome, preço, order bump (+R$21,90) e upsell (+R$197) sugeridos pelas regras",
-    ]}
-  />
-);
-
-export const Biblioteca = () => (
-  <PlaceholderPage
-    emoji="📚"
-    title="Infoprodutos — Biblioteca"
-    subtitle="Seus infoprodutos gerados, com pré-visualização e download."
-    items={["Listagem com pré-visualização", "Download do PDF", "Regenerar a partir do prompt"]}
-  />
-);
-
 export const AdsPages = () => (
   <PlaceholderPage
     emoji="🛡️"
@@ -151,15 +128,6 @@ export const ContasGoogle = () => (
     title="Contas do Google"
     subtitle="Contas Google Ads conectadas (OAuth + developer token + customer IDs)."
     items={["Cards por conta com conectar/testar", "Vinculação de subcontas MCC"]}
-  />
-);
-
-export const ApiKeys = () => (
-  <PlaceholderPage
-    emoji="🔌"
-    title="Chaves de API"
-    subtitle="Gerencie as integrações: Gemini, NVIDIA NIM, GitHub, Cloudflare, Telegram, Pinterest, Google Ads, Meta, TikTok, Gamma AI e Canva."
-    items={["Cards por integração com status Conectado/Desconectado", "Teste de chamada read-only por card", "Prioridade e failover do pool de LLM"]}
   />
 );
 
