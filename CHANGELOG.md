@@ -26,6 +26,9 @@ Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois
 - Backend: CRUD completo de produtos em SQLite (`/api/produtos` GET/POST/PUT/DELETE +
   `/aprovar`), versão 0.1.01.
 - Auth: guard de sessão no frontend (cookie HMAC httpOnly), logout via sidebar.
+- Workflow `publish-npm`: normalização canônica da versão solicitada antes do `npm version`
+  (corrige `npm error Version not changed` no npm 11 / Node 24 quando o package.json já
+  está na versão canônica da etiqueta visual pedida).
 
 ## 0.1.00 — 2026-10-25
 
