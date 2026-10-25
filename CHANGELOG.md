@@ -3,6 +3,15 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.02 — 2026-10-25
+
+- Launcher: caixa da URL em ASCII puro (evita mojibake de caracteres Unicode no CMD/Windows).
+- Documentação (README/MANUAL): ressalva obrigatória — os comandos npx devem ser executados
+  **fora da pasta do repositório** (dentro dela o npx prioriza o projeto local sem
+  `node_modules/.bin`); para desenvolvimento local usar `node scripts\cli.mjs`.
+- Validado ponta a ponta com o pacote publicado no registry (install com venv + deps,
+  auto-migração de porta 8188→8189, health e SPA servidos).
+
 ## 0.1.01 — 2026-10-25
 
 - **Parte 2 — Frontend React + Vite + Tailwind (base AdsX 1:1).**

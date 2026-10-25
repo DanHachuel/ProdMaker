@@ -14,7 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.01";
+const APP_VERSION = "0.1.02";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -78,12 +78,13 @@ function venvPython(home) {
 
 function printUrlBox(port) {
   const url = `http://localhost:${port}`;
+  const line = (text) => `|  ${text}${" ".repeat(Math.max(0, 43 - text.length))}|`;
   console.log("");
-  console.log("┌─────────────────────────────────────────────┐");
-  console.log("│  ProdMaker rodando em:                      │");
-  console.log(`│  >>>  ${url}  ${" ".repeat(Math.max(0, 24 - url.length))}│`);
-  console.log("│  Abra esta URL MANUALMENTE no navegador.   │");
-  console.log("└─────────────────────────────────────────────┘");
+  console.log("+" + "-".repeat(45) + "+");
+  console.log(line("ProdMaker rodando em:"));
+  console.log(line(`>>>  ${url}`));
+  console.log(line("Abra esta URL MANUALMENTE no navegador."));
+  console.log("+" + "-".repeat(45) + "+");
   console.log("");
 }
 

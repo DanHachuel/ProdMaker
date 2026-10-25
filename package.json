@@ -1,6 +1,6 @@
 {
   "name": "@danhachuel/prodmaker",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "ProdMaker — SaaS local para criação de infoprodutos, landing pages, campanhas e tracking (base AdsX).",
   "license": "MIT",
   "type": "module",

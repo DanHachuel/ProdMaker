@@ -66,3 +66,9 @@ Verifica Node, Python, venv, dependências, storage, backend e porta.
 | Porta 8188 ocupada | O launcher migra para 8189–8199 automaticamente; confira a URL impressa. |
 | `settings.json corrompido` | O sistema preserva a cópia em `storage/state/settings.corrupt.json` e não sobrescreve. Restaure manualmente. |
 | Erro no Windows sobre scripts desabilitados | Use `npx.cmd` (CMD/MobaXterm) em vez do `npx` do PowerShell. |
+| `'prodmaker' não é reconhecido` ao rodar o npx | Execute os comandos npx **fora da pasta do repositório** (ex.: `%USERPROFILE%`). Dentro da pasta do projeto, o npx prioriza o pacote local (que não tem `node_modules/.bin`). Para desenvolvimento local use `node scripts\cli.mjs` na raiz do repositório. |
+
+## Importante
+
+- **Nunca rode os comandos npx dentro de `C:\Users\danha\Documents\REPOSITORIO\ProdMaker`** — o npx entende que você quer executar o projeto local. Use qualquer outra pasta.
+- O ProdMaker **nunca abre o navegador** (REGRA ZERO): após iniciar, abra manualmente a URL impressa no terminal.

@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-APP_VERSION = "0.1.01"
+APP_VERSION = "0.1.02"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 
@@ -261,7 +261,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.1"}
+    return {"version": APP_VERSION, "canonical": "0.1.2"}
 
 
 @app.get("/api/settings")
