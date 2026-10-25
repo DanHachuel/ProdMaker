@@ -3,15 +3,16 @@ import hashlib
 import hmac
 import json
 import os
+import sqlite3
 import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-APP_VERSION = "0.1.00"
+APP_VERSION = "0.1.01"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 
@@ -22,6 +23,7 @@ DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 LEGAL_DIR = Path(__file__).resolve().parent.parent / "legal"
 
 app = FastAPI(title="ProdMaker", version=APP_VERSION)
+
 
 # ---------------------------------------------------------------------------
 # Storage helpers (leitura protegida: nunca sobrescrever dados corrompidos)
@@ -45,11 +47,11 @@ def get_settings() -> dict:
 def save_settings(data: dict) -> dict:
     ensure_state_dir()
     settings_path = STATE / "settings.json"
-    backup = STATE / "settings.corrupt.json"
     if settings_path.exists():
         try:
             json.loads(settings_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
+            backup = STATE / "settings.corrupt.json"
             backup.write_text(settings_path.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
             raise HTTPException(status_code=500, detail="settings.json corrompido — cópia preservada em settings.corrupt.json.")
     settings_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -62,6 +64,49 @@ def get_secret() -> bytes:
     if not secret_path.exists():
         secret_path.write_bytes(os.urandom(32))
     return secret_path.read_bytes()
+
+
+# ---------------------------------------------------------------------------
+# Banco de dados local (SQLite via stdlib)
+# ---------------------------------------------------------------------------
+
+
+def get_db():
+    ensure_state_dir()
+    conn = sqlite3.connect(STATE / "prodmaker.db")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def ensure_db() -> None:
+    with get_db() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS produtos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                plataforma TEXT NOT NULL DEFAULT 'Outro',
+                link_afiliado TEXT NOT NULL DEFAULT '',
+                comissao REAL NOT NULL DEFAULT 0,
+                preco REAL NOT NULL DEFAULT 0,
+                nicho TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'em_analise',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+
+ensure_db()
+
+
+def now_str() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def row_to_dict(row) -> dict:
+    return {key: row[key] for key in row.keys()}
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +180,76 @@ def auth_session(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Produtos (Seus Produtos — em análise / aprovados)
+# ---------------------------------------------------------------------------
+
+
+class ProdutoBody(BaseModel):
+    nome: str
+    plataforma: str = "Outro"
+    link_afiliado: str = ""
+    comissao: float = 0
+    preco: float = 0
+    nicho: str = ""
+
+
+@app.get("/api/produtos")
+def list_produtos():
+    with get_db() as conn:
+        rows = conn.execute("SELECT * FROM produtos ORDER BY updated_at DESC, id DESC").fetchall()
+    return [row_to_dict(row) for row in rows]
+
+
+@app.post("/api/produtos")
+def create_produto(body: ProdutoBody):
+    if not body.nome.strip():
+        raise HTTPException(status_code=400, detail="Informe o nome do produto.")
+    timestamp = now_str()
+    with get_db() as conn:
+        cursor = conn.execute(
+            "INSERT INTO produtos (nome, plataforma, link_afiliado, comissao, preco, nicho, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'em_analise', ?, ?)",
+            (body.nome.strip(), body.plataforma, body.link_afiliado.strip(), body.comissao, body.preco, body.nicho.strip(), timestamp, timestamp),
+        )
+        row = conn.execute("SELECT * FROM produtos WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return row_to_dict(row)
+
+
+@app.put("/api/produtos/{produto_id}")
+def update_produto(produto_id: int, body: ProdutoBody):
+    if not body.nome.strip():
+        raise HTTPException(status_code=400, detail="Informe o nome do produto.")
+    with get_db() as conn:
+        found = conn.execute("SELECT id FROM produtos WHERE id = ?", (produto_id,)).fetchone()
+        if not found:
+            raise HTTPException(status_code=404, detail="Produto não encontrado.")
+        conn.execute(
+            "UPDATE produtos SET nome = ?, plataforma = ?, link_afiliado = ?, comissao = ?, preco = ?, nicho = ?, updated_at = ? WHERE id = ?",
+            (body.nome.strip(), body.plataforma, body.link_afiliado.strip(), body.comissao, body.preco, body.nicho.strip(), now_str(), produto_id),
+        )
+        row = conn.execute("SELECT * FROM produtos WHERE id = ?", (produto_id,)).fetchone()
+    return row_to_dict(row)
+
+
+@app.delete("/api/produtos/{produto_id}")
+def delete_produto(produto_id: int):
+    with get_db() as conn:
+        cursor = conn.execute("DELETE FROM produtos WHERE id = ?", (produto_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Produto não encontrado.")
+    return {"ok": True}
+
+
+@app.post("/api/produtos/{produto_id}/aprovar")
+def aprovar_produto(produto_id: int):
+    with get_db() as conn:
+        cursor = conn.execute("UPDATE produtos SET status = 'aprovado', updated_at = ? WHERE id = ?", (now_str(), produto_id))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Produto não encontrado.")
+        row = conn.execute("SELECT * FROM produtos WHERE id = ?", (produto_id,)).fetchone()
+    return row_to_dict(row)
+
+
+# ---------------------------------------------------------------------------
 # Núcleo
 # ---------------------------------------------------------------------------
 
@@ -146,7 +261,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.0"}
+    return {"version": APP_VERSION, "canonical": "0.1.1"}
 
 
 @app.get("/api/settings")
@@ -177,7 +292,7 @@ def preview_page(page_id: str):
     raise HTTPException(status_code=404, detail="Página não encontrada.")
 
 
-def _spa_index() -> HTMLResponse:
+def _spa_index():
     index_path = DIST_DIR / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
@@ -188,7 +303,7 @@ def _spa_index() -> HTMLResponse:
 <style>body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:#f8fafc;color:#1e293b;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
 .box{max-width:520px;padding:40px;text-align:center}h1{color:#7C3AED}.muted{color:#64748b}</style></head>
 <body><div class="box"><h1>🚀 ProdMaker</h1>
-<p>O backend está rodando (v0.1.00).</p>
+<p>O backend está rodando.</p>
 <p class="muted">O frontend (React + Vite + Tailwind) será publicado na Parte 2.</p>
 <p class="muted">API: <code>/api/health</code> · Legal: <code>/legal/</code></p></div></body></html>"""
     )

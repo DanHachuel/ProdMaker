@@ -8,19 +8,19 @@
 
 ```bash
 # CMD/MobaXterm (Windows)
-npx.cmd --yes --prefer-online @danhachuel/prodmaker@0.1.0 install
-npx.cmd --yes --prefer-online @danhachuel/prodmaker@0.1.0
+npx.cmd --yes --prefer-online @danhachuel/prodmaker@0.1.1 install
+npx.cmd --yes --prefer-online @danhachuel/prodmaker@0.1.1
 
 # Linux/macOS/PowerShell
-npx --yes @danhachuel/prodmaker@0.1.0 install
-npx --yes @danhachuel/prodmaker@0.1.0
+npx --yes @danhachuel/prodmaker@0.1.1 install
+npx --yes @danhachuel/prodmaker@0.1.1
 ```
 
 1. `install` cria a pasta de dados (`PRODMAKER_HOME`), o storage local e instala as dependências Python.
 2. O segundo comando inicia o servidor em `http://localhost:8188` e imprime a URL no terminal.
 3. **Abra a URL manualmente no navegador**, faça login (e-mail + código de ativação) e acesse o painel.
 
-## O que está incluído (0.1.00 — Parte 1: Fundação)
+## O que está incluído (0.1.01 — Parte 2: Frontend)
 
 | Área | Estado |
 |---|---|
@@ -30,7 +30,9 @@ npx --yes @danhachuel/prodmaker@0.1.0
 | Seeds de negócio (prompts, negativas, defaults, decisão, checklist) | ✅ |
 | `/legal` (index, privacidade LGPD, termos) | ✅ |
 | Workflow de publicação NPM via GitHub Actions | ✅ |
-| Frontend React + Vite + Tailwind (login + painel AdsX) | 🚧 Parte 2 |
+| Frontend React + Vite + Tailwind (login + painel AdsX) | ✅ |
+| Seus Produtos (CRUD real: análise → aprovação) | ✅ |
+| Tema claro/escuro | ✅ |
 
 ## Estrutura
 

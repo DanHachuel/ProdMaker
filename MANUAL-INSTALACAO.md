@@ -12,10 +12,10 @@ Abra o terminal (CMD, PowerShell, MobaXterm ou outro) e execute:
 
 ```bash
 # Windows (CMD/MobaXterm)
-npx.cmd --yes --prefer-online @danhachuel/prodmaker@0.1.0 install
+npx.cmd --yes --prefer-online @danhachuel/prodmaker@0.1.1 install
 
 # Linux/macOS
-npx --yes @danhachuel/prodmaker@0.1.0 install
+npx --yes @danhachuel/prodmaker@0.1.1 install
 ```
 
 O que o `install` faz:
@@ -28,10 +28,10 @@ O que o `install` faz:
 
 ```bash
 # Windows (CMD/MobaXterm)
-npx.cmd --yes --prefer-online @danhachuel/prodmaker@0.1.0
+npx.cmd --yes --prefer-online @danhachuel/prodmaker@0.1.1
 
 # Linux/macOS
-npx --yes @danhachuel/prodmaker@0.1.0
+npx --yes @danhachuel/prodmaker@0.1.1
 ```
 
 O terminal imprimirá:

@@ -3,6 +3,30 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.01 — 2026-10-25
+
+- **Parte 2 — Frontend React + Vite + Tailwind (base AdsX 1:1).**
+- Tela de login 1:1: split-screen com lado escuro (`#0A0A0A`) — título com highlight violeta,
+  4 etapas numeradas (Adicione o produto → Crie a Presell → Crie a Campanha → Receba Vendas)
+  com setas rosa, orbs flutuantes violeta/rosa, partículas animadas — e lado claro com
+  formulário (e-mail + código de ativação com olho mostrar/ocultar), seletor de idioma
+  (PT/EN/ES), links de suporte e rodapé com Termos/Privacidade (`/legal`). **Sem marcas terceiras.**
+- Painel AdsX 1:1: sidebar 260px com menu completo (Seus Produtos, AdsDashboard, AdsHosting,
+  Infoprodutos, AdsPages, AdsWords, AdsCreator, AdsTracking, AdsBot, Pinterest, Contas do
+  Google, Chaves de API, Notificações, Logs, FAQ), submenus expansíveis, badge de versão,
+  botão Sair (gradiente); top bar com pill de contexto, avatar do usuário e **tema claro/escuro**
+  via `data-theme` (variáveis CSS do protótipo).
+- **Seus Produtos funcional:** busca, abas 🔍 Em Análise / ✓ Aprovados, tabela com ações
+  (✏️ Editar, ✈️ AdsWord, ✓ Aprovar · 🛡️ AdsPages, 🎯 AdsCreator, ✈️ AdsWord, 🗑️), modal de
+  adicionar/editar (nome, plataforma, nicho, link de afiliado, comissão, preço), estados vazios
+  sem dados inventados.
+- **AdsDashboard:** cards Conversões, Lucro Líquido, ROAS, Investimento (zerados até houver
+  tracking real — a UI nunca inventa dados).
+- Módulos restantes como placeholders documentados (o que vem em cada um).
+- Backend: CRUD completo de produtos em SQLite (`/api/produtos` GET/POST/PUT/DELETE +
+  `/aprovar`), versão 0.1.01.
+- Auth: guard de sessão no frontend (cookie HMAC httpOnly), logout via sidebar.
+
 ## 0.1.00 — 2026-10-25
 
 - **Parte 1 — Fundação do repositório.**
