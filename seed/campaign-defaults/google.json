@@ -1,0 +1,24 @@
+{
+  "rede": "SEARCH",
+  "objetivo": "VENDAS",
+  "lance": {
+    "estrategia": "CPA",
+    "cpa_alvo": "60-80% do valor da comissão"
+  },
+  "orcamento_diario_brl": [100, 120],
+  "localizacao": "Presença (apenas)",
+  "correspondencia": "frase",
+  "negativas_file": "seed/negatives/google-words.txt",
+  "anuncio": {
+    "titulos": [
+      "{produto} - Site Oficial",
+      "Compre Agora com Desconto",
+      "Oferta por Tempo Limitado"
+    ],
+    "recursos": ["sitelinks", "callouts", "estrutura de preços"]
+  },
+  "otimizacao": {
+    "ctr_minimo": "1%",
+    "cpa_alerta": "> 50% do ticket"
+  }
+}

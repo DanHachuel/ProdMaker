@@ -1,0 +1,4 @@
+# ProdMaker — dependências Python (instaladas pelo launcher em PRODMAKER_HOME/venv)
+# Parte 1 — núcleo
+fastapi
+uvicorn[standard]

@@ -1,0 +1,43 @@
+{
+  "name": "@danhachuel/prodmaker",
+  "version": "0.1.0",
+  "description": "ProdMaker — SaaS local para criação de infoprodutos, landing pages, campanhas e tracking (base AdsX).",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "prodmaker": "scripts/cli.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "scripts/",
+    "app/",
+    "seed/",
+    "legal/",
+    "frontend/dist/",
+    "README.md",
+    "CHANGELOG.md",
+    "MANUAL-INSTALACAO.md",
+    "THIRD-PARTY-NOTICES.md",
+    "LICENSE",
+    "requirements.txt"
+  ],
+  "scripts": {
+    "start": "node scripts/cli.mjs",
+    "install-app": "node scripts/cli.mjs install",
+    "doctor": "node scripts/cli.mjs doctor"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DanHachuel/ProdMaker.git"
+  },
+  "keywords": [
+    "prodmaker",
+    "infoprodutos",
+    "ads",
+    "landing-pages",
+    "local-saas"
+  ],
+  "author": "Dan Pariente Hachuel"
+}

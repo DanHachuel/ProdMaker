@@ -1,0 +1,8 @@
+{
+  "tamanhos_px": [[1000, 1500], [1000, 1000]],
+  "texto": "grande e legivel",
+  "temas": ["review", "beneficios", "comparacao", "dica"],
+  "seo": ["titulo", "descricao", "nome do arquivo", "boards tematicos"],
+  "minimo_pins_por_lancamento": 5,
+  "metricas": ["impressoes", "cliques", "salvamentos", "CTR"]
+}

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ProdMaker — Política de Privacidade</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+body{background:#f8fafc;color:#1e293b;line-height:1.6}
+.container{max-width:820px;margin:0 auto;padding:48px 24px}
+h1{color:#7C3AED;margin-bottom:8px;font-size:28px}
+h2{margin-top:28px;margin-bottom:10px;font-size:18px}
+p,li{color:#334155;margin-bottom:10px}
+ul{padding-left:20px}
+a{color:#7C3AED}
+footer{margin-top:40px;padding-top:20px;border-top:1px solid #e2e8f0;font-size:13px;color:#64748b}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Política de Privacidade</h1>
+  <p>Esta política descreve como o <strong>ProdMaker</strong> — aplicação local de criação de
+  infoprodutos e gestão de campanhas — trata dados pessoais, em conformidade com a
+  <strong>Lei Geral de Proteção de Dados (LGPD — Lei 13.709/2018)</strong>.</p>
+
+  <h2>1. Natureza local da aplicação</h2>
+  <p>O ProdMaker é executado localmente no computador do usuário. Os dados descritos abaixo
+  são armazenados <strong>exclusivamente no dispositivo do usuário</strong>, na pasta
+  <code>PRODMAKER_HOME/storage</code>, e não são transmitidos aos desenvolvedores.</p>
+
+  <h2>2. Dados tratados</h2>
+  <ul>
+    <li><strong>Tokens de API e credenciais de plataformas</strong> (Google Ads, Meta, TikTok,
+    Pinterest, GitHub, Cloudflare, Gamma, NVIDIA, Google Gemini): inseridos pelo próprio
+    usuário, guardados localmente e utilizados apenas para executar as ações solicitadas
+    (criação de campanhas, publicação de páginas etc.).</li>
+    <li><strong>Dados de conversão e rastreamento</strong> (GCLID, cliques, visitas, vendas):
+    coletados pelo pixel próprio nas páginas geradas pelo usuário e usados exclusivamente
+    para otimização das campanhas do próprio usuário.</li>
+    <li><strong>Conteúdo processado por LLMs</strong>: textos enviados pelo usuário aos
+    provedores de IA configurados (NVIDIA NIM e/ou Google Gemini) são regidos pelas
+    políticas de privacidade desses provedores.</li>
+    <li><strong>E-mail e código de ativação</strong>: usados apenas para a sessão local;
+    a validação ocorre no próprio dispositivo.</li>
+  </ul>
+
+  <h2>3. Finalidade e base legal</h2>
+  <p>O tratamento ocorre exclusivamente para execução das funcionalidades solicitadas pelo
+  titular (art. 7º, V e X da LGPD — execução de políticas e cumprimento de solicitação do titular).</p>
+
+  <h2>4. Compartilhamento</h2>
+  <p>O ProdMaker não compartilha dados com terceiros. As credenciais e conteúdos são enviados
+  somente às plataformas explicitamente integradas pelo usuário, quando o próprio usuário
+  aciona as ações correspondentes.</p>
+
+  <h2>5. Direitos do titular</h2>
+  <p>Como todos os dados ficam no dispositivo do usuário, o titular pode visualizar, corrigir
+  ou apagar seus dados a qualquer momento excluindo/editando os arquivos em
+  <code>PRODMAKER_HOME/storage</code>.</p>
+
+  <h2>6. Contato</h2>
+  <p>Dúvidas sobre esta política devem ser abertas no repositório oficial do projeto.</p>
+
+  <footer>© 2026 ProdMaker · <a href="index.html">Início</a> · <a href="terms.html">Termos de Serviço</a></footer>
+</div>
+</body>
+</html>

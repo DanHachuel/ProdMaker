@@ -1,0 +1,12 @@
+{
+  "regras": [
+    { "se": "ROAS > 2.0", "entao": "escalar budget +20%", "dias_consecutivos_escala": 7 },
+    { "se": "ROAS entre 1.5 e 2.0", "entao": "manter e observar" },
+    { "se": "ROAS < 1.5", "entao": "pausar ou otimizar (trocar criativos, ajustar keywords, revisar pagina)" },
+    { "se": "CTR < 1% (Google)", "entao": "melhorar titulo/hook" },
+    { "se": "CPV > R$2,70 (Meta)", "entao": "trocar criativo" },
+    { "se": "CPA > 50% do ticket", "entao": "pausar" },
+    { "se": "keyword/criativo sem conversao por 7 dias", "entao": "substituir" }
+  ],
+  "acao_requer_confirmacao": true
+}

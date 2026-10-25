@@ -1,0 +1,14 @@
+{
+  "formato": "9:16 vertical",
+  "duracao_segundos": [15, 30],
+  "estilo": "UGC",
+  "publico": {
+    "idade": [18, 45],
+    "paises": ["US", "UK", "CA", "AU"]
+  },
+  "criativo": "primeiros 3 segundos param o scroll; musica viral; texto na tela; CTA final",
+  "orcamento": {
+    "teste_diario_usd": [10, 20],
+    "escala_diario_usd": [50, 100]
+  }
+}

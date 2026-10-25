@@ -1,0 +1,18 @@
+{
+  "estrutura": "1 campanha -> 1 conjunto -> 5-20 criativos",
+  "objetivo": "VENDAS",
+  "publico": "aberto (Open) + Advantage+",
+  "orcamento": "numero_criativos x (ticket / 2)",
+  "criativo": {
+    "formula": "Atencao 3s + Promessa + Prova + CTA",
+    "rosto_e_texto": true,
+    "cpv_alerta_brl": 2.70
+  },
+  "otimizacao": {
+    "cpa_alerta": "> metade do ticket",
+    "roas_manter": [1.2, 1.6],
+    "roas_escalar_20pct": [1.6, 2.0],
+    "roas_dobrar": 2.0,
+    "dias_para_campanha_escala": 7
+  }
+}
