@@ -35,6 +35,9 @@ export const api = {
   llmProviders: () => request("/api/llm/providers"),
   llmTest: (id) => request("/api/llm/test", { method: "POST", body: JSON.stringify({ id }) }),
 
+  trackingDashboard: () => request("/api/tracking/dashboard"),
+  visitante: (ip) => request(`/api/tracking/visitante/${ip}`),
+
   infoprodutos: () => request("/api/infoprodutos"),
   createInfoproduto: (body) => request("/api/infoprodutos", { method: "POST", body: JSON.stringify(body) }),
   deleteInfoproduto: (id) => request(`/api/infoprodutos/${id}`, { method: "DELETE" }),

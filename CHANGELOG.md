@@ -3,6 +3,22 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.06 — 2026-10-26
+
+- **Parte 5 — AdsTracking: Minhas Visitas (AdsPixel) funcional, layout AdsX 1:1.**
+- Página completa sobre a tabela `visitas`: barra superior com período (90 dias) e contagens;
+  **alerta de POSSÍVEL DRENAGEM DE ORÇAMENTO** (IPs com ≥ 4 cliques repetidos) com botão
+  "Copiar Todos (N IPs)"; cards de visitantes (IP, ID, cliques, dispositivo, último acesso) com
+  **modal do visitante** (badge Humano, detalhes, abas IDs de Rastreamento / Payload JSON com
+  copiar, e últimos eventos).
+- Métricas: Visitas Humanas, Cliques/CTR, Checkouts, Vendas (zerados até chegarem webhooks —
+  nunca inventados); 3 donuts CSS (Origem do Tráfego, Dispositivos, Sistemas Operacionais —
+  parser de User-Agent local, sem serviços externos); **Fluxo de Tráfego ao Vivo** (SVG por
+  hora) e **Funil de Conversão** (Visitas → Cliques → Checkouts → Vendas).
+- Backend: `services/tracking.py` (agregações + parser UA + visitor_id por hash de IP) e
+  `api/tracking.py` (`GET /api/tracking/dashboard`, `GET /api/tracking/visitante/{ip}`).
+- Estado vazio honesto com instruções (configurar URL do `/track` via túnel + publicar páginas).
+
 ## 0.1.05 — 2026-10-26
 
 - **Parte 4 — AdsPages & AdsHosting (geração de páginas, clonagem, pixel, domínios e publicação).**

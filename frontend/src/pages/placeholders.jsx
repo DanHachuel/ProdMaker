@@ -28,20 +28,6 @@ export const AdsCreator = () => (
   />
 );
 
-export const Visitas = () => (
-  <PlaceholderPage
-    emoji="🔄"
-    title="AdsTracking — Minhas Visitas (AdsPixel)"
-    subtitle="Captura dados de cada visitante das suas presells, sem scripts de terceiros."
-    items={[
-      "Cards de visitantes com IP, região, dispositivo e cliques repetidos",
-      "Alerta de drenagem de orçamento com cópia da lista de IPs",
-      "Funil: Visitas → Cliques de oferta → Checkouts → Vendas",
-      "Donuts de origem de tráfego, dispositivos e sistemas operacionais",
-    ]}
-  />
-);
-
 export const Vendas = () => (
   <PlaceholderPage
     emoji="💸"
