@@ -15,7 +15,7 @@ from .services.database import ensure_db, get_db, now_str, row_to_dict
 from .services.llm import LLMError, analyze_product, list_providers
 from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_settings, save_settings
 
-APP_VERSION = "0.1.03"
+APP_VERSION = "0.1.04"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 
@@ -225,7 +225,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.3"}
+    return {"version": APP_VERSION, "canonical": "0.1.4"}
 
 
 @app.get("/api/settings")

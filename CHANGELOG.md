@@ -3,6 +3,10 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.04 — 2026-10-25
+
+- Favicon 🚀 (SVG) nas guias do navegador: app (SPA), login e páginas `/legal`.
+
 ## 0.1.03 — 2026-10-25
 
 - **Parte 3 — Motor LLM + Chaves de API + Análise de Produto por IA + Studio de PDF.**
