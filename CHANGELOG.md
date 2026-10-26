@@ -3,6 +3,29 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.05 — 2026-10-26
+
+- **Parte 4 — AdsPages & AdsHosting (geração de páginas, clonagem, pixel, domínios e publicação).**
+- **AdsPages funcional:** pre-sell de afiliado e página de vendas (12 seções) geradas por LLM
+  (templates do seed, idioma selecionável, dados preenchidos a partir do produto vinculado);
+  **clonagem de páginas com higienização** (BeautifulSoup remove scripts, iframes, noscript e
+  pixels/analytics do original); pré-visualização local em `/pages/{id}`, editor de HTML
+  integrado e download.
+- **Pixel próprio (AdsPixel) embutido** nas páginas geradas quando a URL pública do `/track`
+  está configurada (card "Pixel de Rastreamento" em Chaves de API): pageview, clique em CTA e
+  tempo na página, capturando gclid/utm/ref — endpoint `/track` (GET/POST + CORS) grava na
+  tabela `visitas` (a UI de Minhas Visitas vem na sequência). Sem URL configurada, nenhuma
+  tag é embutida (a UI não inventa dados).
+- **AdsHosting — Domínios:** cards no layout AdsX com status pendente/online; verificação por
+  DNS público (NS/A via dnspython) e, com API Token Cloudflare configurado, status da zona
+  via API; name servers exibidos com botão copiar; "+ Tags, Pixels and Scripts (Opcional)"
+  por domínio; adicionar/remover domínios.
+- **Páginas Criadas:** tabela com preview, download, edição de HTML, status rascunho/publicada
+  e **Publicar 🚀 via GitHub Contents API** (commit do HTML no repositório configurado em
+  Chaves de API; Cloudflare Pages deploy automaticamente quando o repositório está conectado) —
+  com link do commit e URL pública.
+- Novas tabelas: `paginas`, `dominios`, `visitas`. requirements.txt: + beautifulsoup4, dnspython.
+
 ## 0.1.04 — 2026-10-25
 
 - Favicon 🚀 (SVG) nas guias do navegador: app (SPA), login e páginas `/legal`.

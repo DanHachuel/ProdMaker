@@ -15,7 +15,7 @@ from .services.database import ensure_db, get_db, now_str, row_to_dict
 from .services.llm import LLMError, analyze_product, list_providers
 from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_settings, save_settings
 
-APP_VERSION = "0.1.04"
+APP_VERSION = "0.1.05"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 
@@ -26,9 +26,13 @@ app = FastAPI(title="ProdMaker", version=APP_VERSION)
 
 from .api import infoprodutos as infoprodutos_router  # noqa: E402
 from .api import llm as llm_router  # noqa: E402
+from .api import paginas as paginas_router  # noqa: E402
+from .api import dominios as dominios_router  # noqa: E402
 
 app.include_router(llm_router.router)
 app.include_router(infoprodutos_router.router)
+app.include_router(paginas_router.router)
+app.include_router(dominios_router.router)
 
 ensure_db()
 
@@ -225,7 +229,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.4"}
+    return {"version": APP_VERSION, "canonical": "0.1.5"}
 
 
 @app.get("/api/settings")
@@ -236,6 +240,52 @@ def read_settings():
 @app.put("/api/settings")
 def update_settings(data: dict):
     return save_settings(data)
+
+
+# ---------------------------------------------------------------------------
+# Pixel próprio (AdsPixel) — recebe eventos das páginas geradas/publicadas
+# ---------------------------------------------------------------------------
+
+
+@app.options("/track")
+def track_options():
+    return Response(
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        },
+    )
+
+
+@app.api_route("/track", methods=["GET", "POST"])
+def track(request: Request):
+    params = dict(request.query_params)
+    forwarded = request.headers.get("x-forwarded-for", "")
+    ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "")
+    known = {"event", "page", "gclid", "utm_source", "utm_medium", "utm_campaign", "ref"}
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO visitas (event, page, gclid, utm_source, utm_medium, utm_campaign, ref, ip, user_agent, extra, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    params.get("event", "pageview"),
+                    params.get("page", ""),
+                    params.get("gclid", ""),
+                    params.get("utm_source", ""),
+                    params.get("utm_medium", ""),
+                    params.get("utm_campaign", ""),
+                    params.get("ref", ""),
+                    ip,
+                    request.headers.get("user-agent", ""),
+                    json.dumps({k: v for k, v in params.items() if k not in known}, ensure_ascii=False),
+                    now_str(),
+                ),
+            )
+    except Exception:
+        pass  # o pixel nunca deve quebrar a página do visitante
+    return Response(status_code=204, headers={"Access-Control-Allow-Origin": "*"})
 
 
 # ---------------------------------------------------------------------------

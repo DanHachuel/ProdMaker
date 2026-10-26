@@ -1,46 +1,6 @@
 import React from "react";
 import PlaceholderPage from "../components/PlaceholderPage";
 
-export const Dominios = () => (
-  <PlaceholderPage
-    emoji="🌐"
-    title="AdsHosting — Domínios"
-    subtitle="Gerencie seus domínios no Cloudflare e publique presells com SSL, DNS e antibot."
-    items={[
-      "Adicionar domínio e apontar name servers (verificação NS e registro A)",
-      "Status por domínio: pendente ou online (SSL, DNS, Antibot)",
-      "Tags, Pixels e Scripts opcionais por domínio",
-      "Publicação das páginas geradas direto no domínio via Cloudflare Pages",
-    ]}
-  />
-);
-
-export const PaginasCriadas = () => (
-  <PlaceholderPage
-    emoji="📄"
-    title="AdsHosting — Páginas Criadas"
-    subtitle="Todas as presells e páginas de vendas hospedadas, com visitas e status."
-    items={[
-      "Tabela de páginas: nome, domínio, produto, visitas e status",
-      "Ações: ver online, editar, excluir e abrir estatísticas",
-    ]}
-  />
-);
-
-export const AdsPages = () => (
-  <PlaceholderPage
-    emoji="🛡️"
-    title="AdsPages"
-    subtitle="Crie e hospede presells nativas e páginas de vendas (12 seções) com pixel embutido."
-    items={[
-      "Pre-sell de afiliado com link de afiliado no CTA",
-      "Página de vendas própria com as 12 seções validadas",
-      "Clonagem e higienização de páginas (remoção de scripts/pixels do original)",
-      "Escolha do domínio (Cloudflare) e publicação com um clique",
-    ]}
-  />
-);
-
 export const AdsWords = () => (
   <PlaceholderPage
     emoji="✈️"

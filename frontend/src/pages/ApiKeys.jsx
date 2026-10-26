@@ -9,6 +9,7 @@ const LLM_DEFAULTS = {
 };
 
 const KEY_CARDS = [
+  { id: "tracking", emoji: "🎯", name: "Pixel de Rastreamento", fields: [{ key: "pixel_url", label: "URL pública do /track (túnel ou domínio)", placeholder: "https://meu-tunel.exemplo.com/track" }] },
   { id: "gamma", emoji: "🎨", name: "Gamma AI", fields: [{ key: "api_key", label: "API Key", secret: true }, { key: "base_url", label: "Base URL", placeholder: "https://api.app.gamma" }] },
   { id: "github", emoji: "🐙", name: "GitHub", fields: [{ key: "token", label: "Token (PAT)", secret: true }, { key: "repo", label: "Repositório de páginas (opcional)", placeholder: "usuario/prodmaker-pages" }] },
   { id: "cloudflare", emoji: "☁️", name: "Cloudflare", fields: [{ key: "api_token", label: "API Token", secret: true }, { key: "account_id", label: "Account ID" }] },

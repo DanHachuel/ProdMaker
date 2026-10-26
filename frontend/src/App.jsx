@@ -10,6 +10,9 @@ import Dashboard from "./pages/Dashboard";
 import ApiKeys from "./pages/ApiKeys";
 import Studio from "./pages/Studio";
 import Biblioteca from "./pages/Biblioteca";
+import AdsPages from "./pages/AdsPages";
+import PaginasCriadas from "./pages/PaginasCriadas";
+import Dominios from "./pages/Dominios";
 import * as Pages from "./pages/placeholders";
 
 const AppCtx = createContext(null);
@@ -90,11 +93,11 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Produtos />} />
                 <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/hosting/dominios" element={<Pages.Dominios />} />
-                <Route path="/hosting/paginas" element={<Pages.PaginasCriadas />} />
+                <Route path="/hosting/dominios" element={<Dominios />} />
+                <Route path="/hosting/paginas" element={<PaginasCriadas />} />
                 <Route path="/studio" element={<Studio />} />
                 <Route path="/studio/biblioteca" element={<Biblioteca />} />
-                <Route path="/adspages" element={<Pages.AdsPages />} />
+                <Route path="/adspages" element={<AdsPages />} />
                 <Route path="/adswords" element={<Pages.AdsWords />} />
                 <Route path="/adscreator" element={<Pages.AdsCreator />} />
                 <Route path="/tracking/visitas" element={<Pages.Visitas />} />

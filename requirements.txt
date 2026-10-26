@@ -8,3 +8,6 @@ google-genai
 # Infoprodutos (Markdown -> HTML -> PDF)
 markdown
 xhtml2pdf
+# AdsPages (clonagem + verificação de domínios)
+beautifulsoup4
+dnspython

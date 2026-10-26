@@ -16,7 +16,12 @@ Esta lista cresce a cada fase conforme novas integrações são ativadas.
 - **google-genai (SDK oficial Google Gemini)** — Apache-2.0 — https://github.com/googleapis/python-genai
 - **Markdown** — BSD-3-Clause — https://github.com/Python-Markdown/markdown
 - **xhtml2pdf** (inclui ReportLab) — MIT/Apache-2.0 — https://github.com/xhtml2pdf/xhtml2pdf
-- **httpx** (transitivo do openai; usado pelo cliente Gamma) — BSD-3-Clause — https://github.com/encode/httpx
+- **httpx** (transitivo do openai; usado pelos clientes GitHub/Cloudflare/clone) — BSD-3-Clause — https://github.com/encode/httpx
+
+## Runtime (Parte 4)
+
+- **Beautiful Soup 4** — MIT License — https://www.crummy.com/software/BeautifulSoup/ (higienização de páginas clonadas)
+- **dnspython** — ISC License — https://github.com/rbarrois/dnspython (verificação NS/A de domínios)
 
 ## Integrações planejadas (fases futuras)
 

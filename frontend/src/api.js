@@ -39,4 +39,17 @@ export const api = {
   createInfoproduto: (body) => request("/api/infoprodutos", { method: "POST", body: JSON.stringify(body) }),
   deleteInfoproduto: (id) => request(`/api/infoprodutos/${id}`, { method: "DELETE" }),
   infoprodutoMarkdown: (id) => request(`/api/infoprodutos/${id}/markdown`),
+
+  paginas: () => request("/api/paginas"),
+  createPagina: (body) => request("/api/paginas", { method: "POST", body: JSON.stringify(body) }),
+  paginaHtml: (id) => request(`/api/paginas/${id}/html`),
+  updatePaginaHtml: (id, html) => request(`/api/paginas/${id}/html`, { method: "PUT", body: JSON.stringify({ html }) }),
+  publicarPagina: (id) => request(`/api/paginas/${id}/publicar`, { method: "POST" }),
+  deletePagina: (id) => request(`/api/paginas/${id}`, { method: "DELETE" }),
+
+  dominios: () => request("/api/dominios"),
+  createDominio: (body) => request("/api/dominios", { method: "POST", body: JSON.stringify(body) }),
+  verificarDominio: (id) => request(`/api/dominios/${id}/verificar`, { method: "POST" }),
+  updateDominioTags: (id, tags) => request(`/api/dominios/${id}/tags`, { method: "PUT", body: JSON.stringify({ tags }) }),
+  deleteDominio: (id) => request(`/api/dominios/${id}`, { method: "DELETE" }),
 };

@@ -48,6 +48,55 @@ def ensure_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS paginas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                titulo TEXT NOT NULL,
+                tipo TEXT NOT NULL,
+                produto_id INTEGER,
+                idioma TEXT NOT NULL DEFAULT 'Portugues',
+                html_path TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'rascunho',
+                published_url TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dominios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pendente',
+                cf_zone_id TEXT NOT NULL DEFAULT '',
+                ns_data TEXT NOT NULL DEFAULT '',
+                a_data TEXT NOT NULL DEFAULT '',
+                tags TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS visitas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event TEXT NOT NULL DEFAULT '',
+                page TEXT NOT NULL DEFAULT '',
+                gclid TEXT NOT NULL DEFAULT '',
+                utm_source TEXT NOT NULL DEFAULT '',
+                utm_medium TEXT NOT NULL DEFAULT '',
+                utm_campaign TEXT NOT NULL DEFAULT '',
+                ref TEXT NOT NULL DEFAULT '',
+                ip TEXT NOT NULL DEFAULT '',
+                user_agent TEXT NOT NULL DEFAULT '',
+                extra TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(produtos)")]
         if "analysis" not in columns:
             conn.execute("ALTER TABLE produtos ADD COLUMN analysis TEXT NOT NULL DEFAULT ''")
