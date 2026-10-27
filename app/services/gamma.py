@@ -4,8 +4,6 @@ Base URL configurável em Chaves de API (padrão https://api.gamma.app).
 """
 import time
 
-import httpx
-
 
 class GammaError(Exception):
     pass
@@ -16,6 +14,8 @@ def _headers(api_key: str) -> dict:
 
 
 def gerar_pdf_gamma(api_key: str, base_url: str, titulo: str, prompt: str, total_timeout: float = 600.0) -> bytes:
+    import httpx
+
     base = (base_url or "https://api.app.gamma").rstrip("/")
     started = time.time()
     with httpx.Client(timeout=60.0) as client:

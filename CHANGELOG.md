@@ -3,6 +3,22 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.07 — 2026-10-27
+
+- **Código de Ativação Mestre:** o login local agora valida o código de verdade.
+  O backend define `MASTER_CODE` (`get_master_code()` — default `1234`, sobrescrevível
+  via variável `PRODMAKER_MASTER_CODE`) e o alias **`admin`** também é sempre aceito;
+  qualquer e-mail + código mestre entram. Códigos comuns deixam de ser aceitos
+  (antes qualquer código ≥ 4 caracteres passava na validação simulada).
+- **Launcher imprime o código ao iniciar:** o box de inicialização agora mostra
+  `CODIGO DE ATIVACAO: <código>` (buscado direto do backend — fonte única de verdade,
+  com fallback para env/default). Sessões já autenticadas continuam válidas (JWT 30 dias).
+- **Robustez de boot:** imports de dependências de serviço (markdown, xhtml2pdf, httpx,
+  bs4, dns) tornados preguiçosos — o servidor sobe com qualquer Python que tenha
+  fastapi/uvicorn, e o erro claro (com instrução `prodmaker install`) aparece apenas na
+  ação que precisa da dependência.
+- Docs: MANUAL-INSTALACAO e README atualizados com o fluxo de login pelo código mestre.
+
 ## 0.1.06 — 2026-10-26
 
 - **Parte 5 — AdsTracking: Minhas Visitas (AdsPixel) funcional, layout AdsX 1:1.**

@@ -5,8 +5,6 @@ está conectado a um projeto do Cloudflare Pages (conexão única, feita no pain
 """
 import base64
 
-import httpx
-
 from .llm import LLMError
 
 GITHUB_API = "https://api.github.com"
@@ -22,6 +20,8 @@ def _github_config() -> tuple[str, str]:
 
 
 def publicar_pagina(page_id: int, titulo: str, html: str) -> dict:
+    import httpx
+
     token, repo = _github_config()
     if not token or not repo:
         raise LLMError(

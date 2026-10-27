@@ -1,12 +1,16 @@
 """Clonagem de páginas com higienização — remove scripts, pixels e iframes do original."""
-import httpx
-from bs4 import BeautifulSoup
-
 from .llm import LLMError
 
 
 def clonar_url(url: str) -> tuple[str, str]:
     """Baixa a URL e devolve (HTML higienizado, título) — scripts/pixels/iframes removidos."""
+    try:
+        import httpx
+        from bs4 import BeautifulSoup
+    except ImportError as exc:
+        raise LLMError(
+            f"Dependência de clonagem ausente ({exc.name}) — rode 'prodmaker install' para concluir a instalação."
+        ) from exc
     if not url.strip().startswith(("http://", "https://")):
         raise LLMError("Informe uma URL válida (http/https) para clonar.")
     try:

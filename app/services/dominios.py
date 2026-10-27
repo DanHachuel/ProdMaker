@@ -1,8 +1,6 @@
 """AdsHosting — verificação de domínios via Cloudflare API + DNS público."""
 import json
 
-import httpx
-
 from .llm import LLMError
 
 CF_BASE = "https://api.cloudflare.com/client/v4"
@@ -56,6 +54,8 @@ def verificar_dominio(nome: str) -> dict:
 
     token = _cloudflare_token()
     if token:
+        import httpx
+
         try:
             with httpx.Client(timeout=30.0) as client:
                 response = client.get(f"{CF_BASE}/zones", headers={"Authorization": f"Bearer {token}"}, params={"name": nome})

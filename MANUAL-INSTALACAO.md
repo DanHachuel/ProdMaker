@@ -45,9 +45,12 @@ O terminal imprimirá:
 ```
 
 **Abra a URL manualmente.** O ProdMaker nunca abre o navegador sozinho (REGRA ZERO).
+O box de inicialização também imprime o **Código de Ativação Mestre** (default: `1234`) —
+no login, use qualquer e-mail + esse código (ou digite `admin` como código).
+Código customizado: variável de ambiente `PRODMAKER_MASTER_CODE`.
 Se a porta 8188 estiver ocupada, o launcher usará automaticamente 8189–8199 e informará.
 
-- Login: informe e-mail e código de ativação (no modo local simulado, qualquer e-mail válido + código com 4+ caracteres).
+- Login: informe qualquer e-mail e o **Código de Ativação Mestre** impresso no terminal ao iniciar (default: `1234`; ou digite `admin`).
 - Para encerrar: `Ctrl+C` no terminal.
 
 ## Diagnóstico

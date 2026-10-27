@@ -23,6 +23,16 @@ def ensure_state_dir() -> None:
     STATE.mkdir(parents=True, exist_ok=True)
 
 
+def get_master_code() -> str:
+    """Código de Ativação Mestre — aceito com qualquer e-mail no login local.
+
+    Pode ser sobrescrito pela variável de ambiente PRODMAKER_MASTER_CODE.
+    O alias literal 'admin' também é sempre aceito (ver app.main.is_master_code).
+    """
+    code = (os.environ.get("PRODMAKER_MASTER_CODE") or "").strip()
+    return code or "1234"
+
+
 def get_settings() -> dict:
     settings_path = STATE / "settings.json"
     if not settings_path.exists():

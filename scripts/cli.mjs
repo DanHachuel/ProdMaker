@@ -14,7 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.06";
+const APP_VERSION = "0.1.07";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -76,7 +76,7 @@ function venvPython(home) {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
-function printUrlBox(port) {
+function printUrlBox(port, masterCode) {
   const url = `http://localhost:${port}`;
   const line = (text) => `|  ${text}${" ".repeat(Math.max(0, 43 - text.length))}|`;
   console.log("");
@@ -84,6 +84,10 @@ function printUrlBox(port) {
   console.log(line("ProdMaker rodando em:"));
   console.log(line(`>>>  ${url}`));
   console.log(line("Abra esta URL MANUALMENTE no navegador."));
+  console.log(line(""));
+  console.log(line(`CODIGO DE ATIVACAO: ${masterCode}`));
+  console.log(line("Login: qualquer e-mail + este codigo"));
+  console.log(line('(ou digite "admin" como codigo)'));
   console.log("+" + "-".repeat(45) + "+");
   console.log("");
 }
@@ -152,6 +156,21 @@ async function commandInstall(flags) {
   console.log("Depois abra http://localhost:8188 MANUALMENTE no navegador (o sistema nunca abre o navegador).");
 }
 
+async function fetchMasterCode(python, home) {
+  if (python) {
+    try {
+      const result = spawnSync(python, ["-c", "from app.services.store import get_master_code; print(get_master_code())"], {
+        cwd: PKG_ROOT,
+        encoding: "utf8",
+        env: { ...process.env, PRODMAKER_HOME: home },
+      });
+      const value = (result.stdout || "").trim().split(/\r?\n/).pop() || "";
+      if (result.status === 0 && value) return value;
+    } catch {}
+  }
+  return (process.env.PRODMAKER_MASTER_CODE || "").trim() || "1234";
+}
+
 async function commandRun() {
   const home = resolveHome();
   const settingsPath = storagePath(home, "state", "settings.json");
@@ -190,7 +209,8 @@ async function commandRun() {
       : ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)];
 
   console.log("Iniciando ProdMaker...");
-  printUrlBox(port);
+  const masterCode = await fetchMasterCode(pythonCmd, home);
+  printUrlBox(port, masterCode);
 
   const env = { ...process.env, PRODMAKER_HOME: home, PRODMAKER_PORT: String(port) };
   const child = spawn(pythonCmd, pythonArgs, {

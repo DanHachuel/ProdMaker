@@ -18,7 +18,7 @@ npx --yes @danhachuel/prodmaker@0.1.1
 
 1. `install` cria a pasta de dados (`PRODMAKER_HOME`), o storage local e instala as dependências Python.
 2. O segundo comando inicia o servidor em `http://localhost:8188` e imprime a URL no terminal.
-3. **Abra a URL manualmente no navegador**, faça login (e-mail + código de ativação) e acesse o painel.
+3. **Abra a URL manualmente no navegador**, faça login (qualquer e-mail + o **Código de Ativação Mestre** impresso no terminal — default `1234` — ou `admin`) e acesse o painel.
 
 ## O que está incluído (0.1.01 — Parte 2: Frontend)
 

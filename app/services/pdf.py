@@ -2,8 +2,6 @@
 import re
 from pathlib import Path
 
-import markdown
-
 EMOJI_RE = re.compile("[\U00010000-\U0010FFFF]")
 
 A4_CSS = """
@@ -24,7 +22,13 @@ li { margin-bottom: 3pt; }
 
 def markdown_para_pdf(md_text: str, output_path: Path) -> Path:
     """Converte Markdown em PDF A4. Retorna o caminho do PDF gerado."""
-    from xhtml2pdf import pisa
+    try:
+        import markdown
+        from xhtml2pdf import pisa
+    except ImportError as exc:
+        raise RuntimeError(
+            f"Dependência de PDF ausente ({exc.name}) — rode 'prodmaker install' para concluir a instalação."
+        ) from exc
 
     clean = EMOJI_RE.sub("", md_text or "")
     body = markdown.markdown(clean, extensions=["extra", "toc"])

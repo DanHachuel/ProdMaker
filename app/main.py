@@ -13,11 +13,12 @@ from pydantic import BaseModel
 
 from .services.database import ensure_db, get_db, now_str, row_to_dict
 from .services.llm import LLMError, analyze_product, list_providers
-from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_settings, save_settings
+from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_master_code, get_settings, save_settings
 
-APP_VERSION = "0.1.06"
+APP_VERSION = "0.1.07"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
+MASTER_ALIAS = "admin"
 
 DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 LEGAL_DIR = Path(__file__).resolve().parent.parent / "legal"
@@ -86,12 +87,22 @@ class LoginBody(BaseModel):
     activation_code: str
 
 
+def is_master_code(code: str) -> bool:
+    """Código Mestre (MASTER_CODE) ou o alias 'admin' liberam o login com qualquer e-mail."""
+    return code == get_master_code() or code.strip().lower() == MASTER_ALIAS
+
+
 @app.post("/api/auth/login")
 def auth_login(body: LoginBody, response: Response):
     email = body.email.strip()
     code = body.activation_code.strip()
-    if "@" not in email or len(code) < 4:
-        raise HTTPException(status_code=400, detail="E-mail inválido ou código de ativação muito curto (mínimo 4 caracteres).")
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="Informe um e-mail válido.")
+    if not is_master_code(code):
+        raise HTTPException(
+            status_code=400,
+            detail="Código de ativação inválido. Use o Código de Ativação Mestre impresso no terminal ao iniciar o ProdMaker (ou digite 'admin').",
+        )
     ensure_state_dir()
     license_path = STATE / "license.json"
     if not license_path.exists():
@@ -231,7 +242,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.6"}
+    return {"version": APP_VERSION, "canonical": "0.1.7"}
 
 
 @app.get("/api/settings")
