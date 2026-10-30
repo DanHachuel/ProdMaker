@@ -3,6 +3,25 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.10 — 2026-10-30
+
+- **Parte 8 — AdsBot (Lançamento Assistido) + Dashboard real + Notificações (adsNotify).**
+- **AdsBot:** wizard de 6 etapas (Produto → Página → Publicar → Campanhas → Tracking →
+  Conclusão) com progresso salvo no banco e retomável; marcação de etapas concluídas;
+  **Relatório de Lançamento** (produto + resumo da análise IA, páginas vinculadas com URLs
+  públicas, campanhas com CPA/orçamento e o checklist final do seed).
+- **Dashboard com dados reais:** conversões, receita, comissão, visitas, produtos, páginas,
+  campanhas e infoprodutos; banner do lançamento em andamento ("faltam X passos" — efeito
+  meta); últimas vendas e últimas páginas. ROAS explicitamente ausente até haver registro
+  de investimento (nunca inventado).
+- **Notificações (adsNotify):** toggles por evento (venda recebida, campanha publicada,
+  página publicada, infoproduto gerado), canais apprise por URL (Telegram entra
+  automaticamente quando Bot Token + Chat ID estão em Chaves de API), teste de envio e
+  histórico local com status/erro. Hooks disparados nos fluxos reais — falha de envio
+  nunca quebra a operação principal.
+- Novas tabelas: `lancamentos`, `notificacoes`. Novos endpoints: `/api/lancamentos/*`,
+  `/api/notificacoes/*`, `/api/dashboard`.
+
 ## 0.1.09 — 2026-10-30
 
 - **Parte 7 — AdsWords & AdsCreator (palavras-chave e campanhas).**

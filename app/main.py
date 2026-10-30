@@ -15,7 +15,7 @@ from .services.database import ensure_db, get_db, now_str, row_to_dict
 from .services.llm import LLMError, analyze_product, list_providers
 from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_master_code, get_settings, save_settings
 
-APP_VERSION = "0.1.09"
+APP_VERSION = "0.1.10"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -32,6 +32,9 @@ from .api import dominios as dominios_router  # noqa: E402
 from .api import tracking as tracking_router  # noqa: E402
 from .api import vendas as vendas_router  # noqa: E402
 from .api import ads as ads_router  # noqa: E402
+from .api import lancamentos as lancamentos_router  # noqa: E402
+from .api import notificacoes as notificacoes_router  # noqa: E402
+from .api import dashboard as dashboard_router  # noqa: E402
 
 app.include_router(llm_router.router)
 app.include_router(infoprodutos_router.router)
@@ -40,6 +43,9 @@ app.include_router(dominios_router.router)
 app.include_router(tracking_router.router)
 app.include_router(vendas_router.router)
 app.include_router(ads_router.router)
+app.include_router(lancamentos_router.router)
+app.include_router(notificacoes_router.router)
+app.include_router(dashboard_router.router)
 
 ensure_db()
 
@@ -246,7 +252,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.9"}
+    return {"version": APP_VERSION, "canonical": "0.1.10"}
 
 
 @app.get("/api/settings")

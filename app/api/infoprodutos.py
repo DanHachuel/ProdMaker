@@ -88,7 +88,16 @@ def create_infoproduto(body: InfoprodutoBody):
                 (provider, rel_pdf, rel_md, record_id),
             )
             row = conn.execute("SELECT * FROM infoprodutos WHERE id = ?", (record_id,)).fetchone()
-        return row_to_dict(row)
+        record = row_to_dict(row)
+
+        from ..services.notify import notify_event
+
+        notify_event(
+            "infoproduto_gerado",
+            "Infoproduto gerado",
+            f"{record['titulo']} ({record['formato']}) — {record['provider']}",
+        )
+        return record
     except (LLMError, gamma_service.GammaError, RuntimeError) as exc:
         with get_db() as conn:
             conn.execute("DELETE FROM infoprodutos WHERE id = ?", (record_id,))

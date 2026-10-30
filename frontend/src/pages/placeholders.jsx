@@ -32,15 +32,6 @@ export const ContasGoogle = () => (
   />
 );
 
-export const Notificacoes = () => (
-  <PlaceholderPage
-    emoji="🔔"
-    title="Notificações (AdsNotify)"
-    subtitle="Push de vendas e conclusões via Telegram/Discord/e-mail (apprise)."
-    items={["Toggles por evento (venda, campanha criada, página publicada…)", "Histórico local e toasts em tempo real"]}
-  />
-);
-
 export const Logs = () => (
   <PlaceholderPage
     emoji="📋"

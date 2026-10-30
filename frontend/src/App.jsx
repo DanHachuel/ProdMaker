@@ -18,6 +18,8 @@ import Vendas from "./pages/Vendas";
 import Gclid from "./pages/Gclid";
 import AdsWords from "./pages/AdsWords";
 import AdsCreator from "./pages/AdsCreator";
+import AdsBot from "./pages/AdsBot";
+import Notificacoes from "./pages/Notificacoes";
 import * as Pages from "./pages/placeholders";
 
 const AppCtx = createContext(null);
@@ -108,11 +110,11 @@ export default function App() {
                 <Route path="/tracking/visitas" element={<Visitas />} />
                 <Route path="/tracking/vendas" element={<Vendas />} />
                 <Route path="/tracking/gclid" element={<Gclid />} />
-                <Route path="/adsbot" element={<Pages.AdsBot />} />
+                <Route path="/adsbot" element={<AdsBot />} />
                 <Route path="/pinterest" element={<Pages.Pinterest />} />
                 <Route path="/contas-google" element={<Pages.ContasGoogle />} />
                 <Route path="/api-keys" element={<ApiKeys />} />
-                <Route path="/notificacoes" element={<Pages.Notificacoes />} />
+                <Route path="/notificacoes" element={<Notificacoes />} />
                 <Route path="/logs" element={<Pages.Logs />} />
                 <Route path="/faq" element={<Pages.Faq />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

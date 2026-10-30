@@ -144,6 +144,11 @@ def marcar_publicada(campanha_id: int, resultado: dict, status: str = "publicada
             "UPDATE campanhas SET status = ?, resultado_json = ?, erro = ?, updated_at = ? WHERE id = ?",
             (status, json.dumps(resultado, ensure_ascii=False), erro[:2000], now_str(), campanha_id),
         )
+    if status == "publicada":
+        from .notify import notify_event
+
+        campanha = get(campanha_id)
+        notify_event("campanha_publicada", f"Campanha publicada ({campanha['plataforma']})", f"{campanha['nome']} — criada PAUSADA para revisão.")
     return get(campanha_id)
 
 

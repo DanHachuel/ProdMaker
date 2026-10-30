@@ -76,4 +76,18 @@ export const api = {
   getCampanha: (id) => request(`/api/campanhas/${id}`),
   deleteCampanha: (id) => request(`/api/campanhas/${id}`, { method: "DELETE" }),
   publicarCampanha: (id) => request(`/api/campanhas/${id}/publicar`, { method: "POST" }),
+
+  dashboard: () => request("/api/dashboard"),
+
+  lancamentoAtual: () => request("/api/lancamentos/atual"),
+  lancamentoEtapas: () => request("/api/lancamentos/etapas"),
+  iniciarLancamento: (produtoId) => request("/api/lancamentos", { method: "POST", body: JSON.stringify({ produto_id: produtoId }) }),
+  salvarEtapaLancamento: (id, etapa, dados) => request(`/api/lancamentos/${id}/etapa`, { method: "POST", body: JSON.stringify({ etapa, dados }) }),
+  relatorioLancamento: (id) => request(`/api/lancamentos/${id}/relatorio`),
+  concluirLancamento: (id) => request(`/api/lancamentos/${id}/concluir`, { method: "POST" }),
+
+  notificacoesConfig: () => request("/api/notificacoes"),
+  salvarNotificacoes: (eventos, targets) => request("/api/notificacoes", { method: "PUT", body: JSON.stringify({ eventos, targets }) }),
+  notificacoesHistorico: () => request("/api/notificacoes/historico"),
+  testarNotificacao: (body) => request("/api/notificacoes/teste", { method: "POST", body: JSON.stringify(body) }),
 };

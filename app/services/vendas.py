@@ -214,7 +214,17 @@ def registrar_venda(data: dict) -> dict:
             ),
         )
         row = conn.execute("SELECT * FROM vendas WHERE id = ?", (cursor.lastrowid,)).fetchone()
-    return row_to_dict(row)
+    record = row_to_dict(row)
+
+    from .notify import notify_event
+
+    notify_event(
+        "venda_recebida",
+        "Nova venda recebida",
+        f"{record.get('produto_nome') or 'Produto'} — R$ {record.get('valor')} ({record.get('fonte')})"
+        + (f" · GCLID {record['gclid'][:20]}" if record.get("gclid") else ""),
+    )
+    return record
 
 
 def list_vendas(limit: int = 300) -> list[dict]:

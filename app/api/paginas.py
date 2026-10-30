@@ -130,6 +130,14 @@ def publicar(page_id: int):
         )
     updated = _get_or_404(page_id)
     updated["publish_result"] = result
+
+    from ..services.notify import notify_event
+
+    notify_event(
+        "pagina_publicada",
+        "Página publicada",
+        f"{updated['titulo']} — {result['pages_url']}",
+    )
     return updated
 
 

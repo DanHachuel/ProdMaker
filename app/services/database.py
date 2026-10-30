@@ -163,6 +163,33 @@ def ensure_db() -> None:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(produtos)")]
         if "analysis" not in columns:
             conn.execute("ALTER TABLE produtos ADD COLUMN analysis TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS lancamentos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                produto_id INTEGER,
+                etapa_atual INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'em_andamento',
+                dados_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notificacoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event TEXT NOT NULL DEFAULT '',
+                titulo TEXT NOT NULL DEFAULT '',
+                mensagem TEXT NOT NULL DEFAULT '',
+                canal TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pendente',
+                erro TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
 
 
 def now_str() -> str:
