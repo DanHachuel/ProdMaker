@@ -3,6 +3,26 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.08 — 2026-10-30
+
+- **Parte 6 — Minhas Vendas & Conversões GCLID.**
+- **Vendas funcionais:** tabela com cards (vendas aprovadas, receita, comissão, conversões
+  pendentes), adição manual, **importação CSV** (colunas em ordem livre + upload de arquivo),
+  exclusão e filtro por status de conversão.
+- **Webhooks de venda públicos:** `POST /api/webhook/sale/{hotmart|clickbank|digistore24|
+  kiify|cakto}` com parser **tolerante** (percorre o JSON procurando valor, comissão, e-mail,
+  transação, GCLID, produto e status — cada plataforma usa nomes diferentes; aceita JSON e form).
+  Página lista as URLs prontas para copiar no postback de cada plataforma.
+- **Matching por GCLID:** ao registrar venda com GCLID, o sistema cruza com a visita
+  correspondente na tabela `visitas` (página, IP, origem) e marca 🎯 no GCLID rastreado.
+- **Conversões offline (GCLID):** enxuta implementação REST `uploadClickConversions`
+  (`services/gads.py`): refresh token OAuth → POST Google Ads API (versão configurável,
+  default v22); upload individual ou **em lote** das pendentes; status por venda
+  (pendente/enviada/erro) com erro atribuído; exige Google Ads completo em Chaves de API
+  (developer token, client, refresh token, customer_id e **conversion_action**).
+- Nova tabela `vendas` (com índices em gclid/created_at). Sem novas dependências Python
+  (upload via httpx já incluso).
+
 ## 0.1.07 — 2026-10-27
 
 - **Código de Ativação Mestre:** o login local agora valida o código de verdade.

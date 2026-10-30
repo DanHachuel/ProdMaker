@@ -97,6 +97,33 @@ def ensure_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS vendas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fonte TEXT NOT NULL DEFAULT 'manual',
+                produto_id INTEGER,
+                produto_nome TEXT NOT NULL DEFAULT '',
+                transacao_id TEXT NOT NULL DEFAULT '',
+                comprador_email TEXT NOT NULL DEFAULT '',
+                valor REAL NOT NULL DEFAULT 0,
+                comissao REAL NOT NULL DEFAULT 0,
+                gclid TEXT NOT NULL DEFAULT '',
+                utm_source TEXT NOT NULL DEFAULT '',
+                utm_medium TEXT NOT NULL DEFAULT '',
+                utm_campaign TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'aprovada',
+                conversao_status TEXT NOT NULL DEFAULT 'pendente',
+                conversao_erro TEXT NOT NULL DEFAULT '',
+                gclid_match TEXT NOT NULL DEFAULT '',
+                raw TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_gclid ON vendas (gclid)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_created ON vendas (created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_visitas_gclid ON visitas (gclid)")
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(produtos)")]
         if "analysis" not in columns:
             conn.execute("ALTER TABLE produtos ADD COLUMN analysis TEXT NOT NULL DEFAULT ''")

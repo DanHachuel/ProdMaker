@@ -28,24 +28,6 @@ export const AdsCreator = () => (
   />
 );
 
-export const Vendas = () => (
-  <PlaceholderPage
-    emoji="💸"
-    title="AdsTracking — Minhas Vendas"
-    subtitle="Vendas rastreadas por webhooks (Hotmart, ClickBank, Digistore24, Kiify, Cakto), entrada manual ou CSV."
-    items={["Tabela de vendas com produto, valor, comissão e origem", "Configuração de webhooks", "Importação CSV e lançamento manual"]}
-  />
-);
-
-export const Gclid = () => (
-  <PlaceholderPage
-    emoji="📤"
-    title="AdsTracking — Conversões GCLID"
-    subtitle="Envie conversões offline (GCLID) de volta ao Google Ads."
-    items={["Upload de conversões via google-ads-python", "Histórico e status de cada conversão enviada"]}
-  />
-);
-
 export const AdsBot = () => (
   <PlaceholderPage
     emoji="🤖"

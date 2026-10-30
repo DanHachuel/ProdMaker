@@ -55,4 +55,12 @@ export const api = {
   verificarDominio: (id) => request(`/api/dominios/${id}/verificar`, { method: "POST" }),
   updateDominioTags: (id, tags) => request(`/api/dominios/${id}/tags`, { method: "PUT", body: JSON.stringify({ tags }) }),
   deleteDominio: (id) => request(`/api/dominios/${id}`, { method: "DELETE" }),
+
+  vendas: () => request("/api/vendas"),
+  vendasResumo: () => request("/api/vendas/resumo"),
+  createVenda: (body) => request("/api/vendas", { method: "POST", body: JSON.stringify(body) }),
+  deleteVenda: (id) => request(`/api/vendas/${id}`, { method: "DELETE" }),
+  importVendasCsv: (csv) => request("/api/vendas/csv", { method: "POST", body: JSON.stringify({ csv }) }),
+  uploadConversao: (id) => request(`/api/vendas/${id}/conversao`, { method: "POST" }),
+  uploadConversoesLote: () => request("/api/vendas/conversoes/upload", { method: "POST" }),
 };
