@@ -124,6 +124,42 @@ def ensure_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_gclid ON vendas (gclid)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_created ON vendas (created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_visitas_gclid ON visitas (gclid)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS palavras (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                produto_id INTEGER,
+                produto_nome TEXT NOT NULL DEFAULT '',
+                tipo TEXT NOT NULL DEFAULT 'positiva',
+                texto TEXT NOT NULL,
+                correspondencia TEXT NOT NULL DEFAULT 'frase',
+                origem TEXT NOT NULL DEFAULT 'ia',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS campanhas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                produto_id INTEGER,
+                plataforma TEXT NOT NULL DEFAULT 'google',
+                nome TEXT NOT NULL,
+                objetivo TEXT NOT NULL DEFAULT '',
+                cpa_alvo REAL NOT NULL DEFAULT 0,
+                orcamento_diario REAL NOT NULL DEFAULT 0,
+                keywords_json TEXT NOT NULL DEFAULT '[]',
+                negativas_json TEXT NOT NULL DEFAULT '[]',
+                criativos_json TEXT NOT NULL DEFAULT '[]',
+                plano_json TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'rascunho',
+                resultado_json TEXT NOT NULL DEFAULT '',
+                erro TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(produtos)")]
         if "analysis" not in columns:
             conn.execute("ALTER TABLE produtos ADD COLUMN analysis TEXT NOT NULL DEFAULT ''")

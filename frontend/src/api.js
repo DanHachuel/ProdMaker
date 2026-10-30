@@ -63,4 +63,17 @@ export const api = {
   importVendasCsv: (csv) => request("/api/vendas/csv", { method: "POST", body: JSON.stringify({ csv }) }),
   uploadConversao: (id) => request(`/api/vendas/${id}/conversao`, { method: "POST" }),
   uploadConversoesLote: () => request("/api/vendas/conversoes/upload", { method: "POST" }),
+
+  adswords: (produtoId) => request(produtoId ? `/api/adswords?produto_id=${produtoId}` : "/api/adswords"),
+  adswordsGerar: (produtoId) => request("/api/adswords/gerar", { method: "POST", body: JSON.stringify({ produto_id: produtoId }) }),
+  adswordsAdicionar: (body) => request("/api/adswords", { method: "POST", body: JSON.stringify(body) }),
+  adswordsRemover: (id) => request(`/api/adswords/${id}`, { method: "DELETE" }),
+
+  gerarCriativos: (body) => request("/api/criativos/gerar", { method: "POST", body: JSON.stringify(body) }),
+
+  campanhas: () => request("/api/campanhas"),
+  createCampanha: (body) => request("/api/campanhas", { method: "POST", body: JSON.stringify(body) }),
+  getCampanha: (id) => request(`/api/campanhas/${id}`),
+  deleteCampanha: (id) => request(`/api/campanhas/${id}`, { method: "DELETE" }),
+  publicarCampanha: (id) => request(`/api/campanhas/${id}/publicar`, { method: "POST" }),
 };

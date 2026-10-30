@@ -1,33 +1,6 @@
 import React from "react";
 import PlaceholderPage from "../components/PlaceholderPage";
 
-export const AdsWords = () => (
-  <PlaceholderPage
-    emoji="✈️"
-    title="AdsWords"
-    subtitle="Palavras-chave e negativas para Google Ads (correspondência de frase)."
-    items={[
-      "Gerador de palavras-chave com variações (review, funciona, onde comprar…)",
-      "Negativas padrão do seed (gratis, download, torrent, refund…)",
-      "Listas editáveis por produto e exportação",
-    ]}
-  />
-);
-
-export const AdsCreator = () => (
-  <PlaceholderPage
-    emoji="🎯"
-    title="AdsCreator"
-    subtitle="Crie anúncios de alta conversão no Google, Meta e TikTok."
-    items={[
-      "Google Ads: Search com CPA 60–80% da comissão e orçamento R$100–120/dia",
-      "Meta Ads: 1 campanha → 1 conjunto → 5–20 criativos (público aberto + Advantage+)",
-      "TikTok Ads: vídeo 9:16 estilo UGC, teste US$10–20/dia",
-      "Gerador de criativos: gancho 3s + promessa + prova + CTA",
-    ]}
-  />
-);
-
 export const AdsBot = () => (
   <PlaceholderPage
     emoji="🤖"

@@ -3,6 +3,25 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.09 — 2026-10-30
+
+- **Parte 7 — AdsWords & AdsCreator (palavras-chave e campanhas).**
+- **AdsWords funcional:** geração de palavras-chave + negativas por IA (prompt do seed,
+  negativas padrão aplicadas automaticamente), listas por produto (positivas/negativas com
+  origem IA/manual), adição manual, remoção e cópia.
+- **Gerador de criativos por IA** (fórmula gancho 3s + promessa + prova + CTA) reutilizado
+  pelo AdsCreator (Google/Meta/TikTok).
+- **AdsCreator — construtor de campanhas:** cards por plataforma, formulário que puxa
+  produto vinculado (comissão → **CPA alvo 70%** no Google; regra criativos × ½ ticket no
+  Meta; teste US$10–20 no TikTok), defaults do seed versionados, salva **rascunho** com
+  plano completo (review modal com JSON do plano + palavras + criativos).
+- **Publicação real (best-effort):** Google Ads via cadeia de mutates REST (orçamento →
+  campanha PAUSADA → grupo → keywords frase + negativas → anúncio RSA), Meta Ads via
+  Marketing API (campanha → conjunto → criativo → anúncio, POSTs simples) e TikTok como
+  plano manual guiado. Tudo criado **PAUSADO para revisão**; erros por etapa com attribution;
+  status por campanha (rascunho/publicada/erro).
+- Novas tabelas: `palavras`, `campanhas`.
+
 ## 0.1.08 — 2026-10-30
 
 - **Parte 6 — Minhas Vendas & Conversões GCLID.**

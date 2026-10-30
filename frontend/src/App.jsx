@@ -16,6 +16,8 @@ import Dominios from "./pages/Dominios";
 import Visitas from "./pages/Visitas";
 import Vendas from "./pages/Vendas";
 import Gclid from "./pages/Gclid";
+import AdsWords from "./pages/AdsWords";
+import AdsCreator from "./pages/AdsCreator";
 import * as Pages from "./pages/placeholders";
 
 const AppCtx = createContext(null);
@@ -101,8 +103,8 @@ export default function App() {
                 <Route path="/studio" element={<Studio />} />
                 <Route path="/studio/biblioteca" element={<Biblioteca />} />
                 <Route path="/adspages" element={<AdsPages />} />
-                <Route path="/adswords" element={<Pages.AdsWords />} />
-                <Route path="/adscreator" element={<Pages.AdsCreator />} />
+                <Route path="/adswords" element={<AdsWords />} />
+                <Route path="/adscreator" element={<AdsCreator />} />
                 <Route path="/tracking/visitas" element={<Visitas />} />
                 <Route path="/tracking/vendas" element={<Vendas />} />
                 <Route path="/tracking/gclid" element={<Gclid />} />
