@@ -107,4 +107,10 @@ export const api = {
   investimentos: () => request("/api/investimentos"),
   registrarInvestimento: (body) => request("/api/investimentos", { method: "POST", body: JSON.stringify(body) }),
   removerInvestimento: (id) => request(`/api/investimentos/${id}`, { method: "DELETE" }),
+
+  builderOfertas: (body) => request("/api/builder/generate-offers", { method: "POST", body: JSON.stringify(body) }),
+  builderEstrutura: (body) => request("/api/builder/generate-structure", { method: "POST", body: JSON.stringify(body) }),
+  builderAnuncios: (body) => request("/api/builder/generate-ads", { method: "POST", body: JSON.stringify(body) }),
+  builderPdf: (body) => request("/api/builder/generate-pdf", { method: "POST", body: JSON.stringify(body) }),
+  builderSalvar: (recordId, anuncios) => request("/api/builder/salvar", { method: "POST", body: JSON.stringify({ record_id: recordId, anuncios }) }),
 };

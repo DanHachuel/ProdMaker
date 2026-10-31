@@ -3,6 +3,23 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.13 — 2026-10-31
+
+- **Fase 10 — Product Builder Wizard (motor de criação de ofertas).**
+- Studio substituído pelo **Wizard de 3 passos**: (1) mineração de **5 ofertas validadas**
+  a partir do nicho (promessa, dores, entregáveis, bônus, preço R$27–97) + registro do
+  **Parceiro 50/50**; (2) **estrutura** (módulos com aulas, e-books, ferramentas, **Quiz
+  com IA** e **3 Order Bumps** — checkout +R$21,90, upsell +R$197, parceiro 50/50) +
+  precificação com trava de faixa; (3) **12 anúncios** (Prova social/material/lógica,
+  Desafio-garantia, Comparação isso-vs-aquilo) com cópia por anúncio + **exportação de PDF**
+  (Markdown → HTML A4 → PDF) e **prompts de imagem** para Gamma/Canva.
+- Backend: `services/builder.py` + `api/builder.py` (`POST /api/builder/generate-offers`,
+  `/generate-structure`, `/generate-ads`, `/generate-pdf`, `/salvar`). Tudo é salvo em
+  `infoprodutos` (novas colunas `oferta_json`, `estrutura_json`, `anuncios_json`, `preco`,
+  `parceiro` com migração automática) para AdsPages/AdsCreator consumirem.
+- Novos prompts no seed: `builder-ofertas.md`, `builder-estrutura.md`, `builder-anuncios.md`.
+- Rota `/studio` agora abre o Wizard; barra de progresso com "passo X de 3".
+
 ## 0.1.12 — 2026-10-31
 
 - **Parte 10 — Polish E2E + OAuth Google 1 clique + radar Supabase + ROAS real.**

@@ -24,6 +24,7 @@ import Pinterest from "./pages/Pinterest";
 import Logs from "./pages/Logs";
 import Faq from "./pages/Faq";
 import ContasGoogle from "./pages/ContasGoogle";
+import Builder from "./pages/Builder";
 import * as Pages from "./pages/placeholders";
 
 const AppCtx = createContext(null);
@@ -106,7 +107,7 @@ export default function App() {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/hosting/dominios" element={<Dominios />} />
                 <Route path="/hosting/paginas" element={<PaginasCriadas />} />
-                <Route path="/studio" element={<Studio />} />
+                <Route path="/studio" element={<Builder />} />
                 <Route path="/studio/biblioteca" element={<Biblioteca />} />
                 <Route path="/adspages" element={<AdsPages />} />
                 <Route path="/adswords" element={<AdsWords />} />
