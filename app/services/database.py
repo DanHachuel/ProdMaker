@@ -190,6 +190,24 @@ def ensure_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                produto_id INTEGER,
+                titulo TEXT NOT NULL,
+                descricao TEXT NOT NULL DEFAULT '',
+                texto_imagem TEXT NOT NULL DEFAULT '',
+                sugestao_imagem TEXT NOT NULL DEFAULT '',
+                board TEXT NOT NULL DEFAULT '',
+                link TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'ideia',
+                provider TEXT NOT NULL DEFAULT '',
+                erro TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
 
 
 def now_str() -> str:

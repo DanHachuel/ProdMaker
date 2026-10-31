@@ -90,4 +90,15 @@ export const api = {
   salvarNotificacoes: (eventos, targets) => request("/api/notificacoes", { method: "PUT", body: JSON.stringify({ eventos, targets }) }),
   notificacoesHistorico: () => request("/api/notificacoes/historico"),
   testarNotificacao: (body) => request("/api/notificacoes/teste", { method: "POST", body: JSON.stringify(body) }),
+
+  pins: (produtoId) => request(produtoId ? `/api/pins?produto_id=${produtoId}` : "/api/pins"),
+  pinsGerar: (body) => request("/api/pins/gerar", { method: "POST", body: JSON.stringify(body) }),
+  pinStatus: (id, status) => request(`/api/pins/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) }),
+  pinRemover: (id) => request(`/api/pins/${id}`, { method: "DELETE" }),
+  pinsExport: (pinIds) => request("/api/pins/export", { method: "POST", body: JSON.stringify({ pin_ids: pinIds }) }),
+
+  logs: () => request("/api/logs"),
+
+  guias: () => request("/api/guias"),
+  guia: (arquivo) => request(`/api/guias/${arquivo}`),
 };

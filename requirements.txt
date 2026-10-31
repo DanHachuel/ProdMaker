@@ -11,3 +11,7 @@ xhtml2pdf
 # AdsPages (clonagem + verificação de domínios)
 beautifulsoup4
 dnspython
+# Notificações (apprise) e Pinterest (py3-pinterest) — imports são preguiçosos:
+# o servidor sobe sem eles; a ação que os usa informa se faltar instalar.
+apprise
+py3-pinterest

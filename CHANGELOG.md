@@ -3,6 +3,26 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.11 — 2026-10-30
+
+- **Parte 9 — Pinterest (orgânico), Logs unificado e FAQ/Documentação** — fecha o menu do AdsX.
+- **Pinterest funcional:** geração de 10 ideias de pins por IA (título ≤100 chars, descrição ≤500,
+  texto na imagem, sugestão de imagem), board/link por produto, estados (ideia → pronto →
+  agendado → publicado), exportação CSV (selecionados ou todos) e agendamento via py3-pinterest
+  (import preguiçoso; erros honestos quando sem credenciais/sessão manual).
+- **Logs unificado:** tabela com Operação, Estado, Data/Hora, Origem e Detalhes agregando
+  campanhas, páginas, infoprodutos, vendas, notificações e visitas — com filtros por operação,
+  estado e busca livre + cópia da linha.
+- **FAQ & Documentação:** FAQ em accordion (login/REGRA ZERO/chaves/publicação/tracking/etc.)
+  + guias de referência servidos do `seed/references` (pixel-e-tuneis.md, webhooks-de-venda.md)
+  + link para /legal (verificação de aplicação LGPD).
+- requirements.txt: + apprise, py3-pinterest (imports preguiçosos — boot preservado).
+- Nova tabela `pins`. Único módulo restante como placeholder: **Contas do Google** (OAuth
+  multi-conta — backlog da parte de contas).
+- **Conjunto AdsX completo:** Seus Produtos · AdsDashboard · AdsHosting · Infoprodutos ·
+  AdsPages · AdsWords · AdsCreator · AdsTracking (Visitas/Vendas/GCLID) · AdsBot · Pinterest ·
+  Chaves de API · Notificações · Logs · FAQ.
+
 ## 0.1.10 — 2026-10-30
 
 - **Parte 8 — AdsBot (Lançamento Assistido) + Dashboard real + Notificações (adsNotify).**
