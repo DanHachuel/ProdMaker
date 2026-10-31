@@ -11,12 +11,23 @@ export default function Dashboard() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [financeiro, setFinanceiro] = useState(null);
+  const [investimentos, setInvestimentos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [investValor, setInvestValor] = useState("");
+  const [investData, setInvestData] = useState("");
+  const [salvandoInvest, setSalvandoInvest] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setData(await api.dashboard());
+      const [dashboardData, investData] = await Promise.all([
+        api.dashboard(),
+        api.investimentos(),
+      ]);
+      setData(dashboardData);
+      setFinanceiro(investData.resumo);
+      setInvestimentos(investData.registros);
     } catch (err) {
       toast(err.message || "Falha ao carregar o dashboard.");
     } finally {
@@ -27,6 +38,32 @@ export default function Dashboard() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const registrarInvestimento = async (event) => {
+    event.preventDefault();
+    if (!Number(investValor)) return;
+    setSalvandoInvest(true);
+    try {
+      await api.registrarInvestimento({ valor: Number(investValor), data: investData });
+      setInvestValor("");
+      setInvestData("");
+      toast("Investimento registrado!");
+      await load();
+    } catch (err) {
+      toast(err.message || "Falha ao registrar investimento.");
+    } finally {
+      setSalvandoInvest(false);
+    }
+  };
+
+  const removerInvestimento = async (item) => {
+    try {
+      await api.removerInvestimento(item.id);
+      await load();
+    } catch (err) {
+      toast(err.message || "Falha ao remover.");
+    }
+  };
 
   if (loading && !data) return <div className="loading-screen">Carregando…</div>;
   if (!data) return null;
@@ -69,10 +106,66 @@ export default function Dashboard() {
           <div className="value">{data.tracking.visitas}</div>
         </div>
       </div>
-      <p className="metrics-note">
-        ROAS aparece quando houver investimento registrado nas campanhas (integração de gastos — parte futura).
-        O ProdMaker nunca inventa métricas.
-      </p>
+
+      <div className="metrics-grid">
+        <div className="metric-card">
+          <h3>Investimento em tráfego</h3>
+          <div className="value">{brl(financeiro?.investimento ?? 0)}</div>
+        </div>
+        <div className="metric-card">
+          <h3>ROAS (Receita ÷ Investimento)</h3>
+          <div className={financeiro?.tem_investimento ? "value green" : "value"} style={{ color: financeiro?.tem_investimento && (financeiro?.roas ?? 0) >= 2 ? undefined : financeiro?.tem_investimento && (financeiro?.roas ?? 0) < 1 ? "var(--danger)" : undefined }}>
+            {financeiro?.tem_investimento ? `${financeiro.roas}x` : "—"}
+          </div>
+        </div>
+        <div className="metric-card">
+          <h3>Lucro Líquido</h3>
+          <div className={(financeiro?.lucro_liquido ?? 0) >= 0 ? "value green" : "value"} style={!((financeiro?.lucro_liquido ?? 0) >= 0) ? { color: "var(--danger)" } : {}}>
+            {brl(financeiro?.lucro_liquido ?? 0)}
+          </div>
+        </div>
+        <div className="metric-card">
+          <h3>Lance diário (média)</h3>
+          <div className="value">—</div>
+        </div>
+      </div>
+
+      <div className="form-card">
+        <h3 style={{ fontSize: "15px", marginBottom: "12px" }}>📥 Registrar investimento em tráfego (gasto do dia)</h3>
+        <form onSubmit={registrarInvestimento} style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div className="form-group" style={{ marginBottom: 0, width: "160px" }}>
+            <label>Valor gasto (R$)</label>
+            <input type="number" step="0.01" min="0" required value={investValor} onChange={(e) => setInvestValor(e.target.value)} placeholder="Ex.: 120.00" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, width: "160px" }}>
+            <label>Data (opcional)</label>
+            <input type="date" value={investData} onChange={(e) => setInvestData(e.target.value)} />
+          </div>
+          <button className="btn-primary" type="submit" disabled={salvandoInvest}>
+            {salvandoInvest ? "Salvando…" : "Registrar"}
+          </button>
+        </form>
+        {investimentos.length > 0 && (
+          <table style={{ marginTop: "16px" }}>
+            <thead>
+              <tr><th>Data</th><th>Valor</th><th></th></tr>
+            </thead>
+            <tbody>
+              {investimentos.slice(0, 8).map((item) => (
+                <tr key={item.id}>
+                  <td>{item.data || item.created_at?.slice(0, 10)}</td>
+                  <td>{brl(item.valor)}</td>
+                  <td className="action-icons"><span title="Remover" onClick={() => removerInvestimento(item)}>🗑️</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="placeholder-note" style={{ marginTop: "10px" }}>
+          ROAS = Receita ÷ Investimento · Lucro Líquido = Receita − Investimento.
+          {financeiro?.comissao ? ` Comissão acumulada: ${brl(financeiro.comissao)}.` : ""}
+        </p>
+      </div>
 
       <div className="metrics-grid">
         <div className="metric-card">

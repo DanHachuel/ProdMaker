@@ -3,6 +3,26 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.12 — 2026-10-31
+
+- **Parte 10 — Polish E2E + OAuth Google 1 clique + radar Supabase + ROAS real.**
+- **OAuth Google (Contas do Google real):** `GET /api/google/oauth/url` monta o consentimento
+  (scope adwords, access_type=offline, prompt=consent) e `GET /api/google/callback` troca o
+  código e **salva o refresh_token automaticamente** em Chaves de API. Página "Contas do
+  Google" com status de conexão, botão conectar/reconectar (popup) e instruções do redirect
+  `http://localhost:8188/api/google/callback`. Basta colar Client ID/Secret uma vez.
+- **Radar Supabase (camada pronta, multi-tenant NÃO ativado):** `dbengine.py` abstrai o banco —
+  SQLite continua o padrão; definindo `DATABASE_URL` (PostgreSQL/Supabase) o sistema conecta
+  via psycopg (dependência declarada, import preguiçoso), com tradução de placeholders `?`→`%s`
+  e linhas dict (mesmo acesso por coluna nos serviços). Todas as 12 tabelas passaram a ter
+  `user_id` (migração ALTER aplicada automaticamente nos bancos existentes) — base para o
+  isolamento multi-tenant via Supabase Auth na próxima etapa.
+- **ROAS real:** tabela `investimentos` (gasto diário em tráfego) + registro/remoção no
+  Dashboard; cards **Investimento**, **ROAS** (Receita ÷ Investimento) e **Lucro Líquido**
+  (Receita − Investimento) calculados com dados reais — sem investimento registrado, ROAS
+  mostra "—" (nunca inventado).
+- **Contas do Google** saiu do placeholder — menu 100% implementado.
+
 ## 0.1.11 — 2026-10-30
 
 - **Parte 9 — Pinterest (orgânico), Logs unificado e FAQ/Documentação** — fecha o menu do AdsX.

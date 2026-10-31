@@ -23,6 +23,7 @@ import Notificacoes from "./pages/Notificacoes";
 import Pinterest from "./pages/Pinterest";
 import Logs from "./pages/Logs";
 import Faq from "./pages/Faq";
+import ContasGoogle from "./pages/ContasGoogle";
 import * as Pages from "./pages/placeholders";
 
 const AppCtx = createContext(null);
@@ -115,7 +116,7 @@ export default function App() {
                 <Route path="/tracking/gclid" element={<Gclid />} />
                 <Route path="/adsbot" element={<AdsBot />} />
                 <Route path="/pinterest" element={<Pinterest />} />
-                <Route path="/contas-google" element={<Pages.ContasGoogle />} />
+                <Route path="/contas-google" element={<ContasGoogle />} />
                 <Route path="/api-keys" element={<ApiKeys />} />
                 <Route path="/notificacoes" element={<Notificacoes />} />
                 <Route path="/logs" element={<Logs />} />

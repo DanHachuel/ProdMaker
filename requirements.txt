@@ -15,3 +15,6 @@ dnspython
 # o servidor sobe sem eles; a ação que os usa informa se faltar instalar.
 apprise
 py3-pinterest
+# PostgreSQL/Supabase — SÓ usado quando DATABASE_URL estiver definida (import preguiçoso).
+# Sem DATABASE_URL o sistema continua 100% SQLite local.
+psycopg[binary]

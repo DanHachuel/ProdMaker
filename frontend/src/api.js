@@ -101,4 +101,10 @@ export const api = {
 
   guias: () => request("/api/guias"),
   guia: (arquivo) => request(`/api/guias/${arquivo}`),
+
+  googleOAuthUrl: () => request("/api/google/oauth/url"),
+
+  investimentos: () => request("/api/investimentos"),
+  registrarInvestimento: (body) => request("/api/investimentos", { method: "POST", body: JSON.stringify(body) }),
+  removerInvestimento: (id) => request(`/api/investimentos/${id}`, { method: "DELETE" }),
 };

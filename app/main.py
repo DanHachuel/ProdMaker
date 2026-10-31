@@ -15,7 +15,7 @@ from .services.database import ensure_db, get_db, now_str, row_to_dict
 from .services.llm import LLMError, analyze_product, list_providers
 from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_master_code, get_settings, save_settings
 
-APP_VERSION = "0.1.11"
+APP_VERSION = "0.1.12"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -38,6 +38,8 @@ from .api import dashboard as dashboard_router  # noqa: E402
 from .api import pins as pins_router  # noqa: E402
 from .api import logs as logs_router  # noqa: E402
 from .api import guias as guias_router  # noqa: E402
+from .api import contas as contas_router  # noqa: E402
+from .api import invest as invest_router  # noqa: E402
 
 app.include_router(llm_router.router)
 app.include_router(infoprodutos_router.router)
@@ -52,6 +54,8 @@ app.include_router(dashboard_router.router)
 app.include_router(pins_router.router)
 app.include_router(logs_router.router)
 app.include_router(guias_router.router)
+app.include_router(contas_router.router)
+app.include_router(invest_router.router)
 
 ensure_db()
 
@@ -258,7 +262,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.11"}
+    return {"version": APP_VERSION, "canonical": "0.1.12"}
 
 
 @app.get("/api/settings")
