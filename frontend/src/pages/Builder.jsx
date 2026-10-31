@@ -5,127 +5,159 @@ import Modal from "../components/Modal";
 import { useToast } from "../components/Toast";
 
 const PASSOS = [
-  { numero: 1, nome: "Oferta e Parceria", emoji: "📦" },
+  { numero: 1, nome: "Mineração e Parceria", emoji: "📦" },
   { numero: 2, nome: "Estrutura e Precificação", emoji: "🧱" },
-  { numero: 3, nome: "Design e Tráfego", emoji: "🎨" },
+  { numero: 3, nome: "Exportação e Landing Page", emoji: "📄" },
+  { numero: 4, nome: "Tráfego e Publicação", emoji: "📣" },
 ];
 
-function ChaveValor({ label, valor }) {
-  return valor ? (
-    <p style={{ fontSize: "13px", marginBottom: "6px" }}>
-      <strong style={{ color: "var(--text-muted)" }}>{label}:</strong> {valor}
-    </p>
-  ) : null;
-}
+const FORMATOS = ["E-book", "Planilha", "Mini-curso", "Desafio", "Workshop"];
 
 export default function Builder() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [passo, setPasso] = useState(1);
+
+  // Passo 1
   const [nicho, setNicho] = useState("");
   const [avatar, setAvatar] = useState("");
   const [ofertas, setOfertas] = useState([]);
   const [ofertaSel, setOfertaSel] = useState(null);
   const [parceiro, setParceiro] = useState("");
+
+  // Passo 2
+  const [formato, setFormato] = useState("E-book");
   const [estrutura, setEstrutura] = useState(null);
+  const [assets, setAssets] = useState(null);
   const [preco, setPreco] = useState(47);
-  const [anuncios, setAnuncios] = useState([]);
-  const [abaAnuncio, setAbaAnuncio] = useState("todos");
-  const [loading, setLoading] = useState(false);
-  const [erro, setErro] = useState("");
+
+  // Passo 3
+  const [produtoMd, setProdutoMd] = useState("");
   const [record, setRecord] = useState(null);
-  const [previewMd, setPreviewMd] = useState(null);
+  const [landing, setLanding] = useState(null);
+  const [mdAberto, setMdAberto] = useState(false);
 
-  const completa = ofertaSel && estrutura && (preco >= 27 && preco <= 97);
+  // Passo 4
+  const [anuncios, setAnuncios] = useState([]);
+  const [pins, setPins] = useState([]);
+  const [aba, setAba] = useState("anuncios");
+  const [abaAnuncio, setAbaAnuncio] = useState("todos");
+  const [salvando, setSalvando] = useState(false);
+  const [publicando, setPublicando] = useState(false);
+  const [salvo, setSalvo] = useState(null);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const chamar = async (fn, msgs) => {
+  const completa = ofertaSel && estrutura && assets && preco >= 27 && preco <= 97;
+
+  const chamar = async (fn, msg) => {
     setLoading(true);
     setErro("");
     try {
-      return await fn();
+      const result = await fn();
+      if (msg) toast(msg);
+      return result;
     } catch (err) {
       setErro(err.message || "Falha na geração.");
-      if (msgs) toast(err.message || "Falha na geração.");
       return null;
     } finally {
       setLoading(false);
     }
   };
 
+  // ---------------- Passo 1 ----------------
   const gerarOfertas = () =>
-    chamar(
-      async () => {
-        const result = await api.builderOfertas({ nicho, avatar });
-        setOfertas(result.ofertas);
-        setOfertaSel(null);
-        setEstrutura(null);
-        setAnuncios([]);
-        toast(`${result.ofertas.length} ofertas geradas por ${result.provider}!`);
-      },
-      true
-    );
+    chamar(async () => {
+      const result = await api.builderOfertas({ nicho, avatar });
+      setOfertas(result.ofertas);
+      setOfertaSel(null);
+      setEstrutura(null);
+      setAssets(null);
+      setAnuncios([]);
+      setPins([]);
+      setSalvo(null);
+      return `${result.ofertas.length} ofertas por ${result.provider}!`;
+    });
 
+  // ---------------- Passo 2 ----------------
   const gerarEstrutura = () =>
-    chamar(
-      async () => {
-        const result = await api.builderEstrutura({ oferta: ofertaSel });
-        setEstrutura(result.estrutura);
-        if (ofertaSel?.preco_sugerido) setPreco(Math.round(ofertaSel.preco_sugerido));
-        toast("Estrutura + quiz + 3 order bumps gerados!");
-      },
-      true
-    );
+    chamar(async () => {
+      const result = await api.builderEstrutura({ oferta: ofertaSel });
+      setEstrutura(result.estrutura);
+      if (ofertaSel?.preco_sugerido) setPreco(Math.round(ofertaSel.preco_sugerido));
+      return "Estrutura gerada!";
+    });
 
+  const gerarAssets = () =>
+    chamar(async () => {
+      const result = await api.builderAssets({ oferta: ofertaSel, preco });
+      setAssets(result);
+      return "3 Order Bumps + Quiz gerados!";
+    });
+
+  // ---------------- Passo 3 ----------------
+  const gerarProduto = () =>
+    chamar(async () => {
+      const result = await api.builderProduto({ oferta: ofertaSel, estrutura, formato });
+      setProdutoMd(result.markdown);
+      setMdAberto(true);
+      return `Conteúdo completo gerado por ${result.provider}! (${result.markdown.length} caracteres)`;
+    });
+
+  const gerarPdf = () =>
+    chamar(async () => {
+      const result = await api.builderPdf({ oferta: ofertaSel, estrutura, preco, parceiro, modo: "rapido", produto_md: produtoMd });
+      setRecord(result);
+      if (result.erro_pdf) toast(result.erro_pdf);
+      return result.erro_pdf ? "Markdown salvo (PDF com aviso)." : "PDF gerado!";
+    });
+
+  const gerarLanding = () =>
+    chamar(async () => {
+      const result = await api.builderLanding({ oferta: { ...ofertaSel, checkout_link: ofertaSel?.checkout_link || "" }, estrutura, produto_md: produtoMd });
+      setLanding(result);
+      return "Landing page (12 seções) gerada!";
+    });
+
+  // ---------------- Passo 4 ----------------
   const gerarAnuncios = () =>
-    chamar(
-      async () => {
-        const result = await api.builderAnuncios({
-          produto: ofertaSel?.nome || "Produto",
-          promessa: ofertaSel?.promessa || "",
-          nicho,
-          link: "",
-        });
-        setAnuncios(result.anuncios);
-        toast(`${result.anuncios.length} anúncios gerados!`);
-      },
-      true
-    );
+    chamar(async () => {
+      const result = await api.builderAnuncios({ produto: ofertaSel?.nome || "Produto", promessa: ofertaSel?.promessa || "", nicho, link: "" });
+      setAnuncios(result.anuncios);
+      setPins(result.pins);
+      return `${result.anuncios.length} anúncios e ${result.pins.length} pins gerados!`;
+    });
 
-  const exportarPdf = () =>
-    chamar(
-      async () => {
-        const result = await api.builderPdf({
-          oferta: ofertaSel,
-          estrutura,
-          preco,
-          parceiro,
-          modo: "rapido",
-        });
-        setRecord(result);
-        setPreviewMd(result.markdown);
-        if (result.erro_pdf) toast(result.erro_pdf);
-        else toast("PDF gerado!");
-      },
-      true
-    );
+  const publicar = () =>
+    chamar(async () => {
+      if (!landing) throw new Error("Gere a landing page no Passo 3 antes de publicar.");
+      setPublicando(true);
+      try {
+        const result = await api.publicarPagina(landing.id);
+        setLanding(result);
+        return "Página publicada no GitHub (deploy automático no Cloudflare Pages)!";
+      } finally {
+        setPublicando(false);
+      }
+    });
 
   const salvar = () =>
-    chamar(
-      async () => {
+    chamar(async () => {
+      setSalvando(true);
+      try {
         let id = record?.id;
         if (!id) {
-          const result = await api.builderPdf({ oferta: ofertaSel, estrutura, preco, parceiro, modo: "rapido" });
-          id = result.id;
+          const r = await api.builderPdf({ oferta: ofertaSel, estrutura, preco, parceiro, modo: "rapido", produto_md: produtoMd });
+          id = r.id;
+          setRecord(r);
         }
-        const saved = await api.builderSalvar(id, anuncios);
-        setRecord(saved);
-        toast("Produto salvo! AdsPages e AdsCreator já podem consumir.");
-      },
-      true
-    );
-
-  const anunciosFiltrados =
-    abaAnuncio === "todos" ? anuncios : anuncios.filter((item) => item.categoria === abaAnuncio);
+        const saved = await api.builderSalvar(id, anuncios, pins);
+        setSalvo(saved);
+        return `Produto salvo! (infoproduto #${saved.id} · produto #${saved.produto?.produto_id})`;
+      } finally {
+        setSalvando(false);
+      }
+    });
 
   const copiar = async (texto) => {
     try {
@@ -136,20 +168,21 @@ export default function Builder() {
     }
   };
 
+  const anunciosFiltrados = abaAnuncio === "todos" ? anuncios : anuncios.filter((a) => a.categoria === abaAnuncio);
   const erroLLM = erro && /Chaves de API|provedor/i.test(erro);
 
   return (
     <section>
       <h1>🧠 Product Builder — Wizard de Ofertas</h1>
-      <p className="subtitle">Crie a oferta completa em 3 passos: 5 ofertas validadas → estrutura + quiz + 3 order bumps → PDF e 12 anúncios.</p>
+      <p className="subtitle">Crie a oferta completa em 4 passos: 5 ofertas → estrutura + quiz + 3 order bumps → produto (PDF) + landing page → 12 anúncios, 10 pins e publicação.</p>
 
       <div className="form-card">
-        <div className="flex-between" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-          <strong>{PASSOS.map((p) => `${p.emoji} ${p.numero}. ${p.nome}`).join("   →   ")}</strong>
-          <span style={{ fontSize: "13px", color: "var(--primary)", fontWeight: 700 }}>Passo {passo} de 3</span>
+        <div className="flex-between" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+          <strong>{PASSOS.map((p) => `${p.emoji} ${p.numero}. ${p.nome}`).join("  →  ")}</strong>
+          <span style={{ fontSize: "13px", color: "var(--primary)", fontWeight: 700 }}>Passo {passo} de 4</span>
         </div>
         <div className="funnel-step-bar" style={{ height: "12px" }}>
-          <div style={{ width: `${(passo / 3) * 100}%`, background: "var(--primary)", height: "100%", borderRadius: "4px" }} />
+          <div style={{ width: `${(passo / 4) * 100}%`, background: "var(--primary)", height: "100%", borderRadius: "4px" }} />
         </div>
       </div>
 
@@ -162,7 +195,7 @@ export default function Builder() {
         </div>
       )}
 
-      {/* ---------- PASSO 1 ---------- */}
+      {/* ================= PASSO 1 ================= */}
       {passo === 1 && (
         <div className="form-card">
           <div className="form-row">
@@ -216,56 +249,62 @@ export default function Builder() {
         </div>
       )}
 
-      {/* ---------- PASSO 2 ---------- */}
+      {/* ================= PASSO 2 ================= */}
       {passo === 2 && (
         <div className="form-card">
-          {!estrutura ? (
+          <p style={{ fontSize: "14px", marginBottom: "12px" }}>
+            Oferta: <strong>{ofertaSel?.nome}</strong> — "{ofertaSel?.promessa}"
+          </p>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Formato do produto</label>
+              <select value={formato} onChange={(e) => setFormato(e.target.value)}>
+                {FORMATOS.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{ maxWidth: "260px" }}>
+              <label>Preço (R$27 a R$97)</label>
+              <input type="number" min="27" max="97" value={preco} onChange={(e) => setPreco(Number(e.target.value))} />
+              {preco < 27 || preco > 97 ? (
+                <p className="placeholder-note" style={{ color: "var(--warning)" }}>Mantenha entre R$27 e R$97.</p>
+              ) : null}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button className="btn-primary" onClick={gerarEstrutura} disabled={loading || !ofertaSel}>
+              {loading ? "✨ …" : "🧱 Gerar estrutura (módulos)"}
+            </button>
+            <button className="btn-outline" onClick={gerarAssets} disabled={loading || !ofertaSel}>
+              {loading ? "✨ …" : "💎 Gerar 3 Order Bumps + Quiz"}
+            </button>
+          </div>
+
+          {estrutura && (
             <>
-              <p style={{ fontSize: "14px", marginBottom: "12px" }}>
-                Oferta selecionada: <strong>{ofertaSel?.nome}</strong> — "{ofertaSel?.promessa}"
-              </p>
-              <button className="btn-primary" onClick={gerarEstrutura} disabled={loading || !ofertaSel} style={{ width: "100%" }}>
-                {loading ? "✨ Gerando estrutura…" : "🧱 Gerar estrutura + Quiz + 3 Order Bumps"}
-              </button>
-            </>
-          ) : (
-            <>
-              <h3 style={{ fontSize: "15px", marginBottom: "10px" }}>Módulos</h3>
-              {(estrutura.modulos || []).map((modulo, index) => (
+              <h3 style={{ fontSize: "15px", margin: "16px 0 8px" }}>Módulos</h3>
+              {estrutura.modulos.map((modulo, index) => (
                 <div key={index} style={{ marginBottom: "10px" }}>
                   <strong style={{ fontSize: "14px" }}>{modulo.titulo}</strong>
                   <ul className="placeholder-list">
-                    {(modulo.aulas || []).map((aula, i) => (
-                      <li key={i}>{aula}</li>
-                    ))}
+                    {(modulo.aulas || []).map((aula, i) => <li key={i}>{aula}</li>)}
                   </ul>
                 </div>
               ))}
-              {estrutura.ebooks?.length > 0 && (
-                <>
-                  <h3 style={{ fontSize: "15px", margin: "14px 0 8px" }}>E-books</h3>
-                  <ul className="placeholder-list">{estrutura.ebooks.map((item, i) => <li key={i}>{item}</li>)}</ul>
-                </>
+              {(estrutura.ebooks?.length > 0 || estrutura.ferramentas?.length > 0) && (
+                <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+                  {estrutura.ebooks?.length ? `E-books: ${estrutura.ebooks.join(" · ")}. ` : ""}
+                  {estrutura.ferramentas?.length ? `Ferramentas: ${estrutura.ferramentas.join(" · ")}.` : ""}
+                </p>
               )}
-              {estrutura.ferramentas?.length > 0 && (
-                <>
-                  <h3 style={{ fontSize: "15px", margin: "14px 0 8px" }}>Ferramentas / Planilhas</h3>
-                  <ul className="placeholder-list">{estrutura.ferramentas.map((item, i) => <li key={i}>{item}</li>)}</ul>
-                </>
-              )}
-              {estrutura.quiz?.perguntas?.length > 0 && (
-                <>
-                  <h3 style={{ fontSize: "15px", margin: "14px 0 8px" }}>🧩 Quiz ({estrutura.quiz.perguntas.length} perguntas)</h3>
-                  <ol className="placeholder-list">
-                    {estrutura.quiz.perguntas.map((pergunta, i) => (
-                      <li key={i}>{pergunta.pergunta}</li>
-                    ))}
-                  </ol>
-                </>
-              )}
-              <h3 style={{ fontSize: "15px", margin: "16px 0 8px" }}>3 Order Bumps</h3>
+            </>
+          )}
+
+          {assets && (
+            <>
+              <h3 style={{ fontSize: "15px", margin: "18px 0 8px" }}>💎 3 Order Bumps</h3>
               <div className="metrics-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-                {(estrutura.order_bumps || []).map((bump, index) => (
+                {assets.order_bumps.map((bump, index) => (
                   <div className="metric-card" key={index}>
                     <h3>{bump.tipo}</h3>
                     <div style={{ fontSize: "13px", fontWeight: 600, margin: "6px 0" }}>{bump.nome}</div>
@@ -276,48 +315,57 @@ export default function Builder() {
                   </div>
                 ))}
               </div>
-              <div className="form-group" style={{ marginTop: "16px", maxWidth: "280px" }}>
-                <label>Preço do produto (R$27 a R$97)</label>
-                <input
-                  type="number"
-                  min="27"
-                  max="97"
-                  value={preco}
-                  onChange={(e) => setPreco(Number(e.target.value))}
-                />
-                {preco < 27 || preco > 97 ? (
-                  <p className="placeholder-note" style={{ color: "var(--warning)" }}>Mantenha o preço entre R$27 e R$97 (faixa low-ticket validada).</p>
-                ) : null}
-              </div>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <button className="btn-outline" onClick={() => setPasso(1)}>← Voltar</button>
-                <button className="btn-primary" onClick={() => setPasso(3)} disabled={!completa} style={{ flex: 1 }}>
-                  Avançar para Design e Tráfego →
-                </button>
-              </div>
+              {assets.quiz?.perguntas?.length > 0 && (
+                <>
+                  <h3 style={{ fontSize: "15px", margin: "16px 0 8px" }}>🧩 Quiz ({assets.quiz.perguntas.length} perguntas)</h3>
+                  <ol className="placeholder-list">
+                    {assets.quiz.perguntas.map((p, i) => <li key={i}>{p.pergunta}</li>)}
+                  </ol>
+                </>
+              )}
             </>
           )}
+
+          <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
+            <button className="btn-outline" onClick={() => setPasso(1)}>← Voltar</button>
+            <button className="btn-primary" onClick={() => setPasso(3)} disabled={!completa} style={{ flex: 1 }}>
+              Avançar para Exportação →
+            </button>
+          </div>
         </div>
       )}
 
-      {/* ---------- PASSO 3 ---------- */}
+      {/* ================= PASSO 3 ================= */}
       {passo === 3 && completa && (
         <>
           <div className="form-card">
-            <h3 style={{ fontSize: "15px", marginBottom: "12px" }}>🎨 Design e PDF</h3>
+            <h3 style={{ fontSize: "15px", marginBottom: "12px" }}>📄 Produto e PDF</h3>
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <button className="btn-primary" onClick={exportarPdf} disabled={loading}>
-                {loading ? "✨ Gerando PDF…" : "📄 Exportar PDF do produto"}
+              <button className="btn-primary" onClick={gerarProduto} disabled={loading}>
+                {loading ? "✨ Gerando…" : "📝 Gerar conteúdo completo"}
               </button>
-              {record?.pdf_path && (
-                <a className="btn-outline" style={{ textDecoration: "none" }} href={`/api/infoprodutos/${record.id}/download`}>
-                  ⬇️ Baixar PDF
-                </a>
-              )}
-              {previewMd && (
-                <button className="btn-outline" onClick={() => copiar(previewMd)}>📋 Copiar Markdown</button>
-              )}
+              <button className="btn-outline" onClick={gerarPdf} disabled={loading || !produtoMd}>
+                📄 Gerar PDF
+              </button>
             </div>
+            {produtoMd && (
+              <>
+                <div style={{ display: "flex", gap: "10px", marginTop: "12px", flexWrap: "wrap" }}>
+                  <button className="btn-outline" style={{ fontSize: "12px", padding: "6px 12px" }} onClick={() => setMdAberto(true)}>
+                    👁️ Ver conteúdo ({produtoMd.length} caracteres)
+                  </button>
+                  <button className="btn-outline" style={{ fontSize: "12px", padding: "6px 12px" }} onClick={() => copiar(produtoMd)}>
+                    📋 Copiar Markdown
+                  </button>
+                  {record?.pdf_path && (
+                    <a className="btn-outline" style={{ textDecoration: "none", fontSize: "12px", padding: "6px 12px" }} href={`/api/infoprodutos/${record.id}/download`}>
+                      ⬇️ Baixar PDF
+                    </a>
+                  )}
+                </div>
+                {record?.erro_pdf && <p className="placeholder-note" style={{ color: "var(--danger)" }}>{record.erro_pdf}</p>}
+              </>
+            )}
             {record?.imagem_prompts?.length > 0 && (
               <>
                 <h4 style={{ fontSize: "14px", margin: "16px 0 8px" }}>🖼️ Prompts de imagem (Gamma / Canva)</h4>
@@ -330,22 +378,58 @@ export default function Builder() {
                 </ul>
               </>
             )}
-            {record?.erro_pdf && <p className="placeholder-note" style={{ color: "var(--danger)" }}>{record.erro_pdf}</p>}
           </div>
 
           <div className="form-card">
+            <h3 style={{ fontSize: "15px", marginBottom: "12px" }}>🛡️ Landing Page (12 seções)</h3>
+            <button className="btn-primary" onClick={gerarLanding} disabled={loading}>
+              {loading ? "✨ Gerando…" : "🛡️ Gerar Landing Page de vendas"}
+            </button>
+            {landing && (
+              <div style={{ marginTop: "12px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <a className="btn-outline" style={{ textDecoration: "none" }} href={landing.preview_url} target="_blank" rel="noreferrer">
+                  👁️ Pré-visualizar
+                </a>
+                <a className="btn-outline" style={{ textDecoration: "none" }} href={`/api/paginas/${landing.id}/download`}>
+                  ⬇️ Download HTML
+                </a>
+                <span style={{ fontSize: "12px", color: "var(--text-muted)", alignSelf: "center" }}>
+                  {landing.plataforma || "vendas"} · gerada por {landing.provider}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button className="btn-outline" onClick={() => setPasso(2)}>← Voltar</button>
+            <button className="btn-primary" onClick={() => setPasso(4)} style={{ flex: 1 }}>
+              Avançar para Tráfego →
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ================= PASSO 4 ================= */}
+      {passo === 4 && completa && (
+        <>
+          <div className="form-card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-              <h3 style={{ fontSize: "15px" }}>📣 12 Anúncios prontos</h3>
+              <h3 style={{ fontSize: "15px" }}>📣 Tráfego pronto</h3>
               <button className="btn-primary" onClick={gerarAnuncios} disabled={loading}>
-                {loading ? "✨ Gerando…" : anuncios.length ? "🔄 Regerar" : "✨ Gerar 12 anúncios"}
+                {loading ? "✨ Gerando…" : anuncios.length ? "🔄 Regerar" : "✨ Gerar 12 anúncios + 10 pins"}
               </button>
             </div>
-            {anuncios.length > 0 && (
+            <div className="tabs">
+              <div className={`tab ${aba === "anuncios" ? "active" : ""}`} onClick={() => setAba("anuncios")}>Anúncios ({anuncios.length})</div>
+              <div className={`tab ${aba === "pins" ? "active" : ""}`} onClick={() => setAba("pins")}>Pins ({pins.length})</div>
+            </div>
+
+            {aba === "anuncios" && anuncios.length > 0 && (
               <>
-                <div className="tabs">
-                  {["todos", "prova", "desafio", "comparacao"].map((aba) => (
-                    <div key={aba} className={`tab ${abaAnuncio === aba ? "active" : ""}`} onClick={() => setAbaAnuncio(aba)}>
-                      {aba === "todos" ? `Todos (${anuncios.length})` : `${aba[0].toUpperCase()}${aba.slice(1)} (${anuncios.filter((a) => a.categoria === aba).length})`}
+                <div className="tabs" style={{ marginTop: "8px" }}>
+                  {["todos", "prova", "desafio", "comparacao"].map((cat) => (
+                    <div key={cat} className={`tab ${abaAnuncio === cat ? "active" : ""}`} onClick={() => setAbaAnuncio(cat)}>
+                      {cat === "todos" ? `Todos (${anuncios.length})` : `${cat[0].toUpperCase()}${cat.slice(1)} (${anuncios.filter((a) => a.categoria === cat).length})`}
                     </div>
                   ))}
                 </div>
@@ -353,9 +437,7 @@ export default function Builder() {
                   {anunciosFiltrados.map((anuncio, index) => (
                     <div className="visitor-card" key={index} style={{ cursor: "default" }}>
                       <div className="visitor-card-header">
-                        <div className="visitor-ip" style={{ fontSize: "12px" }}>
-                          {anuncio.categoria} / {anuncio.subtipo || "—"}
-                        </div>
+                        <div className="visitor-ip" style={{ fontSize: "12px" }}>{anuncio.categoria} / {anuncio.subtipo || "—"}</div>
                         <span className="visitor-card-link" onClick={() => copiar(`${anuncio.texto}\n${anuncio.cta}`)}>📋 Copiar</span>
                       </div>
                       <p style={{ fontSize: "13px" }}>{anuncio.texto}</p>
@@ -365,33 +447,70 @@ export default function Builder() {
                 </div>
               </>
             )}
+
+            {aba === "pins" && (
+              pins.length > 0 ? (
+                <table style={{ marginTop: "8px" }}>
+                  <thead>
+                    <tr><th>Título</th><th>Texto na imagem</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {pins.map((pin, index) => (
+                      <tr key={index}>
+                        <td>{pin.titulo_pin}<div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{pin.descricao}</div></td>
+                        <td>{pin.texto_na_imagem}</td>
+                        <td className="action-icons"><span title="Copiar" onClick={() => copiar(`${pin.titulo_pin}\n${pin.descricao}\n${pin.texto_na_imagem}`)}>📋</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="placeholder-note">Gere os anúncios para receber também as 10 ideias de pins.</p>
+              )
+            )}
           </div>
 
           <div className="form-card" style={{ border: "1px solid var(--primary)" }}>
-            <h3 style={{ fontSize: "15px", marginBottom: "10px" }}>💾 Salvar produto completo</h3>
-            <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px" }}>
-              Salva a oferta, estrutura, order bumps, preço, parceiro e os 12 anúncios em <code>infoprodutos</code> —
-              as abas <strong>AdsPages</strong> e <strong>AdsCreator</strong> passam a consumir esses dados.
-            </p>
+            <h3 style={{ fontSize: "15px", marginBottom: "10px" }}>🚀 Publicação e salvamento</h3>
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <button className="btn-primary" onClick={salvar} disabled={loading || !completa}>
-                💾 Salvar produto
+              <button className="btn-primary" onClick={publicar} disabled={loading || !landing}>
+                {publicando ? "Publicando…" : "🚀 Publicar no GitHub + Cloudflare"}
               </button>
-              {record && (
-                <>
-                  <button className="btn-outline" onClick={() => navigate("/adspages")}>🛡️ Criar página (AdsPages)</button>
-                  <button className="btn-outline" onClick={() => navigate("/adscreator")}>🎯 Criar campanha (AdsCreator)</button>
-                </>
-              )}
+              <button className="btn-outline" onClick={salvar} disabled={loading || !completa}>
+                {salvando ? "Salvando…" : "💾 Salvar produto completo"}
+              </button>
             </div>
-            {record?.oferta && (
-              <p className="placeholder-note" style={{ marginTop: "10px", color: "var(--success)" }}>
-                ✅ "{record.oferta.nome}" salvo (infoproduto #{record.id}).
+            {!landing && <p className="placeholder-note" style={{ marginTop: "8px" }}>Gere a landing page no Passo 3 para publicar.</p>}
+            {landing?.published_url && (
+              <p style={{ fontSize: "13px", marginTop: "10px" }}>
+                ✅ Publicada: <a href={landing.published_url} target="_blank" rel="noreferrer" style={{ color: "var(--primary)" }}>{landing.published_url}</a>
               </p>
             )}
+            {salvo && (
+              <div style={{ marginTop: "12px" }}>
+                <p style={{ fontSize: "13px", color: "var(--success)", fontWeight: 600 }}>
+                  💾 "{salvo.oferta?.nome || salvo.titulo}" salvo (infoproduto #{salvo.id} · produto #{salvo.produto?.produto_id} — já disponível no AdsPages/AdsCreator).
+                </p>
+                <div style={{ display: "flex", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
+                  <button className="btn-outline" style={{ fontSize: "12px", padding: "6px 12px" }} onClick={() => navigate("/studio/biblioteca")}>📚 Biblioteca</button>
+                  <button className="btn-outline" style={{ fontSize: "12px", padding: "6px 12px" }} onClick={() => navigate("/adspages")}>🛡️ AdsPages</button>
+                  <button className="btn-outline" style={{ fontSize: "12px", padding: "6px 12px" }} onClick={() => navigate("/adscreator")}>🎯 AdsCreator</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: "10px" }}>
+            <button className="btn-outline" onClick={() => setPasso(3)}>← Voltar</button>
           </div>
         </>
       )}
+
+      <Modal open={mdAberto} title="Conteúdo do produto (Markdown)" onClose={() => setMdAberto(false)}>
+        <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: "13px", lineHeight: 1.6, color: "var(--text-main)", maxHeight: "60vh", overflow: "auto" }}>
+          {produtoMd}
+        </pre>
+      </Modal>
     </section>
   );
 }

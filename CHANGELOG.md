@@ -3,6 +3,26 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.14 — 2026-10-31
+
+- **Fase 10 — REVISÃO (fechamento das lacunas apontadas na criação de produto/PDF).**
+- **`POST /api/builder/generate-product`:** gera o **conteúdo completo** do produto em
+  Markdown conforme o agente low-ticket — 1. Capa (≤6 palavras); 2. Diagnóstico (5 motivos);
+  3. Solução (5–7 passos); 4. Exemplos (3 casos); 5. Checklist; 6. Bônus.
+- **`POST /api/builder/generate-assets`:** 3 Order Bumps (checkout +R$21,90 · upsell +R$197 ·
+  parceiro 50/50) + **Quiz com IA** (5 perguntas) — rota própria conforme imagem 4.
+- **`POST /api/builder/generate-landing`:** landing page de vendas com as **12 seções
+  validadas**, salva em `paginas` com preview em `/pages/{id}`.
+- **Wizard com 4 passos:** (1) mineração + parceiro; (2) **seleção de formato** (E-book/
+  Planilha/Mini-curso/Desafio/Workshop) + estrutura + assets + preço R$27–97; (3) conteúdo
+  completo + **PDF** + landing page; (4) **12 anúncios + 10 pins** + **Publicar no GitHub +
+  Cloudflare** (reaproveita o motor da Fase 4).
+- `generate-ads` agora devolve também os 10 pins; `generate-pdf` usa o conteúdo completo
+  quando disponível (antes renderia só o esqueleto).
+- **Salvamento completo:** `salvar` grava anúncios + pins e **cria o registro em `produtos`**
+  (status aprovado, vinculado via `infoprodutos.produto_id`) — AdsPages e AdsCreator passam
+  a consumir o produto do builder automaticamente.
+
 ## 0.1.13 — 2026-10-31
 
 - **Fase 10 — Product Builder Wizard (motor de criação de ofertas).**
