@@ -3,6 +3,25 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.17 — 2026-11-01
+
+- **HOTFIX — servidor encerrando sozinho no Windows (CMD/MobaXterm/PowerShell).**
+- Launcher: no Windows o processo Python é iniciado com `shell: true` além de
+  `stdio: 'inherit'`, mantendo o terminal anexado; nova mensagem explícita
+  "O servidor está rodando. Mantenha esta janela aberta. Pressione CTRL+C para encerrar.";
+  se o filho morrer em menos de 3 segundos com código ≠ 0, o launcher imprime o
+  traceback hint e o comando manual em vez de sair em silêncio; `child.on("error")`
+  também diagnosticado.
+- **database.py à prova de crash:** `ensure_db()` recriado com try/except por
+  instrução (CREATE TABLE IF NOT EXISTS + ALTERs de migração) e recuperação de
+  arquivo SQLite corrompido — o banco ruim é movido para
+  `prodmaker.db.corrupt-AAAAMMDD-HHMMSS` e um novo é criado; o Uvicorn nunca cai
+  na inicialização por causa do banco.
+- **Fallback manual:** `app/main.py` agora tem entry point (`python -m app.main`
+  sobe o uvicorn na porta 8188) para ver o traceback completo no terminal.
+- README/MANual: seção "Se o servidor fechar sozinho" com o comando manual
+  `.\venv\Scripts\python.exe -m app.main` (na pasta do ProdMaker).
+
 ## 0.1.16 — 2026-10-31
 
 - **Fase 12 — Billing Stripe + E-mail Marketing (AdsAcademy) + Supabase multi-tenant pronto.**

@@ -3,6 +3,9 @@
 Esquema unico para os dois engines. Todas as tabelas carregam `user_id` (preparacao
 multi-tenant — hoje vazio). `ensure_db()` cria o que falta e aplica ALTERs de migracao.
 """
+import sqlite3
+import time
+
 from .dbengine import (
     add_column_if_missing,
     is_postgres,
@@ -273,19 +276,96 @@ def get_db():
     return connect()
 
 
-def ensure_db() -> None:
-    with get_db() as conn:
-        if is_postgres():
-            for ddl in TABLES.values():
+def _create_tables(conn) -> list[str]:
+    """Cria todas as tabelas; erros por instrução são coletados, nunca abortam."""
+    erros: list[str] = []
+    if is_postgres():
+        for nome, ddl in TABLES.items():
+            try:
                 conn.execute(_pg_ddl(ddl))
-        else:
-            for ddl in TABLES.values():
-                conn.execute(ddl)
-            # Migracao: bancos criados antes da coluna user_id / da tabela investimentos
-            for table in ALL_TABLES:
-                add_column_if_missing(conn, table, "user_id TEXT NOT NULL DEFAULT ''", "user_id")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_gclid ON vendas (gclid)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_visitas_gclid ON visitas (gclid)")
+            except Exception as exc:  # noqa: BLE001
+                erros.append(f"{nome}: {exc}")
+        return erros
+    for nome, ddl in TABLES.items():
+        try:
+            conn.execute(ddl)
+        except sqlite3.DatabaseError as exc:
+            erros.append(f"{nome}: {exc}")
+    # Migracao: bancos criados antes da coluna user_id / das novas tabelas
+    for table in ALL_TABLES:
+        try:
+            add_column_if_missing(conn, table, "user_id TEXT NOT NULL DEFAULT ''", "user_id")
+        except Exception as exc:  # noqa: BLE001
+            erros.append(f"user_id/{table}: {exc}")
+    for index in ("CREATE INDEX IF NOT EXISTS idx_vendas_gclid ON vendas (gclid)", "CREATE INDEX IF NOT EXISTS idx_visitas_gclid ON visitas (gclid)"):
+        try:
+            conn.execute(index)
+        except sqlite3.DatabaseError:
+            pass
+    return erros
+
+
+def _sqlite_file():
+    from .dbengine import _sqlite_path
+
+    return _sqlite_path()
+
+
+_CORRUPCAO_MARCADORES = ("not a database", "malformed", "encrypted", "corrupt", "database disk image")
+
+
+def _parece_corrupcao(exc: Exception) -> bool:
+    texto = str(exc).lower()
+    return any(marcador in texto for marcador in _CORRUPCAO_MARCADORES)
+
+
+def _recriar_banco() -> None:
+    arquivo = _sqlite_file()
+    backup = arquivo.with_name(f"prodmaker.db.corrupt-{time.strftime('%Y%m%d-%H%M%S')}")
+    try:
+        arquivo.rename(backup)
+        print(f"[ProdMaker] Banco SQLite corrompido movido para: {backup.name} — recriando vazio.")
+    except OSError:
+        try:
+            arquivo.unlink(missing_ok=True)
+            print("[ProdMaker] Banco SQLite corrompido removido — recriando vazio.")
+        except OSError:
+            print("[ProdMaker] Banco SQLite corrompido e não pode ser removido.")
+            return
+    with get_db() as conn:
+        _create_tables(conn)
+
+
+def ensure_db() -> None:
+    """Cria/migra o banco. Se o arquivo SQLite estiver CORROMPIDO, faz backup e recria
+    (o Uvicorn nunca cai na inicialização por causa do banco)."""
+    if is_postgres():
+        with get_db() as conn:
+            _create_tables(conn)
+        return
+    conn = get_db()
+    try:
+        try:
+            _create_tables(conn)
+            # Probe de integridade: leitura real detecta arquivo corrompido.
+            conn.execute("SELECT COUNT(*) FROM produtos").fetchone()
+            return
+        except sqlite3.DatabaseError as exc:
+            if not _parece_corrupcao(exc):
+                # Erro de disco/permissão etc: não descarta o arquivo do usuário.
+                print(f"[ProdMaker] Aviso na inicialização do banco: {exc}")
+                return
+            corrompido = True
+    finally:
+        # IMPORTANTE (Windows): o context manager do sqlite3 NÃO fecha a conexão;
+        # sem close() o arquivo fica travado e o rename do recovery falha.
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+    if not corrompido:
+        return
+    _recriar_banco()
 
 
 ensure_db()
