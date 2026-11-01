@@ -102,6 +102,11 @@ export const api = {
   guias: () => request("/api/guias"),
   guia: (arquivo) => request(`/api/guias/${arquivo}`),
 
+  fraudeResumo: () => request("/api/fraude/resumo"),
+  fraudeBloquear: (body) => request("/api/fraude/bloquear", { method: "POST", body: JSON.stringify(body) }),
+  fraudeDesbloquear: (ip) => request(`/api/fraude/ips/${encodeURIComponent(ip)}`, { method: "DELETE" }),
+  tiktokToken: () => request("/api/tiktok/token", { method: "POST" }),
+
   googleOAuthUrl: () => request("/api/google/oauth/url"),
 
   investimentos: () => request("/api/investimentos"),

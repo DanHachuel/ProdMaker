@@ -15,7 +15,7 @@ from .services.database import ensure_db, get_db, now_str, row_to_dict
 from .services.llm import LLMError, analyze_product, list_providers
 from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_master_code, get_settings, save_settings
 
-APP_VERSION = "0.1.14"
+APP_VERSION = "0.1.15"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -41,6 +41,8 @@ from .api import guias as guias_router  # noqa: E402
 from .api import contas as contas_router  # noqa: E402
 from .api import invest as invest_router  # noqa: E402
 from .api import builder as builder_router  # noqa: E402
+from .api import fraude as fraude_router  # noqa: E402
+from .api import tiktok as tiktok_router  # noqa: E402
 
 app.include_router(llm_router.router)
 app.include_router(infoprodutos_router.router)
@@ -58,6 +60,8 @@ app.include_router(guias_router.router)
 app.include_router(contas_router.router)
 app.include_router(invest_router.router)
 app.include_router(builder_router.router)
+app.include_router(fraude_router.router)
+app.include_router(tiktok_router.router)
 
 ensure_db()
 
@@ -264,7 +268,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.14"}
+    return {"version": APP_VERSION, "canonical": "0.1.15"}
 
 
 @app.get("/api/settings")
@@ -300,6 +304,20 @@ def track(request: Request):
     forwarded = request.headers.get("x-forwarded-for", "")
     ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "")
     known = {"event", "page", "gclid", "utm_source", "utm_medium", "utm_campaign", "ref"}
+
+    # Anti-fraude (AdsPixel): IP bloqueado nao entra no tracking; spam e sinalizado
+    from .services import fraude
+
+    try:
+        avaliacao = fraude.avaliar_visita(ip)
+        if avaliacao.get("bloqueado"):
+            # IP na blacklist: nao grava a visita (o pixel segue respondendo 204)
+            return Response(status_code=204, headers={"Access-Control-Allow-Origin": "*"})
+        if params.get("event") == "cta_click":
+            fraude.registrar_clique(ip, params.get("page", ""))
+    except Exception:
+        pass  # anti-fraude nunca quebra o pixel
+    extra_params = json.dumps({k: v for k, v in params.items() if k not in known}, ensure_ascii=False)
     try:
         with get_db() as conn:
             conn.execute(
@@ -314,7 +332,7 @@ def track(request: Request):
                     params.get("ref", ""),
                     ip,
                     request.headers.get("user-agent", ""),
-                    json.dumps({k: v for k, v in params.items() if k not in known}, ensure_ascii=False),
+                    extra_params,
                     now_str(),
                 ),
             )

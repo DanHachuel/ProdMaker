@@ -25,6 +25,7 @@ const MENU = [
       { to: "/tracking/visitas", label: "Minhas Visitas" },
       { to: "/tracking/vendas", label: "Minhas Vendas" },
       { to: "/tracking/gclid", label: "Conversões GCLID" },
+      { to: "/tracking/fraude", label: "Anti-Fraude" },
     ],
   },
   { to: "/adsbot", emoji: "🤖", label: "AdsBot" },

@@ -17,7 +17,8 @@ const KEY_CARDS = [
   { id: "pinterest", emoji: "📌", name: "Pinterest", fields: [{ key: "email", label: "E-mail" }, { key: "password", label: "Senha", secret: true }, { key: "board", label: "Board padrão" }] },
   { id: "google-ads", emoji: "🎯", name: "Google Ads", fields: [{ key: "developer_token", label: "Developer Token", secret: true }, { key: "client_id", label: "OAuth Client ID" }, { key: "client_secret", label: "OAuth Client Secret", secret: true }, { key: "refresh_token", label: "Refresh Token", secret: true }, { key: "customer_id", label: "Customer ID (XXX-XXX-XXXX)" }, { key: "conversion_action", label: "Conversion Action (recurso)", placeholder: "customers/123/conversionActions/456" }, { key: "api_version", label: "Versão da API", placeholder: "v22" }] },
   { id: "meta", emoji: "👥", name: "Meta Ads", fields: [{ key: "app_id", label: "App ID" }, { key: "app_secret", label: "App Secret", secret: true }, { key: "access_token", label: "Access Token (sistema)", secret: true }, { key: "ad_account_id", label: "Ad Account ID (act_...)" }] },
-  { id: "tiktok", emoji: "🎵", name: "TikTok Ads", fields: [{ key: "app_id", label: "App ID" }, { key: "app_secret", label: "App Secret", secret: true }, { key: "access_token", label: "Access Token", secret: true }, { key: "advertiser_id", label: "Advertiser ID" }] },
+  { id: "tiktok", emoji: "🎵", name: "TikTok Ads", fields: [{ key: "app_id", label: "App ID" }, { key: "app_secret", label: "App Secret", secret: true }, { key: "auth_code", label: "Auth Code (portal TikTok)", secret: true }, { key: "advertiser_id", label: "Advertiser ID" }] },
+  { id: "redis", emoji: "🔴", name: "Redis (anti-fraude)", fields: [{ key: "url", label: "REDIS_URL", placeholder: "redis://localhost:6379/0" }] },
   { id: "canva", emoji: "🖼️", name: "Canva (MCP)", soon: true },
 ];
 
@@ -242,6 +243,26 @@ export default function ApiKeys() {
               <button className="btn-primary" onClick={() => saveKeyCard(openCard)} disabled={saving}>
                 {saving ? "Salvando…" : "Salvar"}
               </button>
+              {openCard?.id === "tiktok" && (
+                <button
+                  className="btn-outline"
+                  disabled={testing}
+                  onClick={async () => {
+                    setTesting(true);
+                    try {
+                      const r = await api.tiktokToken();
+                      setTestResult({ ok: true, text: `Token obtido! advertiser ${r.advertiser_id || "—"}` });
+                      await load();
+                    } catch (err) {
+                      setTestResult({ ok: false, text: err.message || "Falha ao obter token." });
+                    } finally {
+                      setTesting(false);
+                    }
+                  }}
+                >
+                  {testing ? "Trocando…" : "🔑 Trocar auth_code por token"}
+                </button>
+              )}
             </div>
           </>
         )}

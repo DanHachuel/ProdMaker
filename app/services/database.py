@@ -1,17 +1,17 @@
-"""Banco de dados — façade sobre dbengine (SQLite padrão, PostgreSQL/Supabase via DATABASE_URL).
+"""Banco de dados — fachada sobre dbengine (SQLite padrao, PostgreSQL/Supabase via DATABASE_URL).
 
-Esquema único para os dois engines. Todas as tabelas carregam `user_id` (preparação
-multi-tenant — hoje vazio). `ensure_db()` cria o que falta e aplica ALTERs de migração.
+Esquema unico para os dois engines. Todas as tabelas carregam `user_id` (preparacao
+multi-tenant — hoje vazio). `ensure_db()` cria o que falta e aplica ALTERs de migracao.
 """
 from .dbengine import (
     add_column_if_missing,
     is_postgres,
-    now_str,  # noqa: F401  (reexportado para os serviços)
-    row_to_dict,  # noqa: F401  (reexportado para os serviços)
+    now_str,  # noqa: F401  (reexportado para os servicos)
+    row_to_dict,  # noqa: F401  (reexportado para os servicos)
 )
 
 # ---------------------------------------------------------------------------
-# Esquema — SQLite DDL; para PostgreSQL as mesmas definições são traduzidas.
+# Esquema — SQLite DDL; para PostgreSQL as mesmas definicoes sao traduzidas.
 # ---------------------------------------------------------------------------
 
 TABLES = {
@@ -201,6 +201,26 @@ TABLES = {
             created_at TEXT NOT NULL
         )
     """,
+    "ips_bloqueados": """
+        CREATE TABLE IF NOT EXISTS ips_bloqueados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL DEFAULT '',
+            ip TEXT NOT NULL,
+            motivo TEXT NOT NULL DEFAULT 'manual',
+            origem TEXT NOT NULL DEFAULT 'sqlite',
+            created_at TEXT NOT NULL
+        )
+    """,
+    "fraude_eventos": """
+        CREATE TABLE IF NOT EXISTS fraude_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL DEFAULT '',
+            ip TEXT NOT NULL,
+            page TEXT NOT NULL DEFAULT '',
+            created_epoch REAL NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+    """,
 }
 
 ALL_TABLES = list(TABLES.keys())
@@ -225,11 +245,9 @@ def ensure_db() -> None:
         else:
             for ddl in TABLES.values():
                 conn.execute(ddl)
-            # Migração: bancos criados antes da coluna user_id / da tabela investimentos
+            # Migracao: bancos criados antes da coluna user_id / da tabela investimentos
             for table in ALL_TABLES:
                 add_column_if_missing(conn, table, "user_id TEXT NOT NULL DEFAULT ''", "user_id")
-            if "investimentos" not in [row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]:
-                conn.execute(TABLES["investimentos"])
         conn.execute("CREATE INDEX IF NOT EXISTS idx_vendas_gclid ON vendas (gclid)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_visitas_gclid ON visitas (gclid)")
 

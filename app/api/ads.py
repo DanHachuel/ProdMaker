@@ -143,11 +143,9 @@ def campanhas_publicar(campanha_id: int):
         elif plataforma == "meta":
             resultado = publish_ads.publicar_meta(campanha)
         else:
-            resultado = {
-                "plataforma": "tiktok",
-                "etapas": [{"etapa": "manual", "observacao": "TikTok: siga o checklist do plano (formato 9:16 UGC) e crie manualmente no TikTok Ads Manager."}],
-                "observacao": "Plano manual — crie manualmente no TikTok Ads Manager.",
-            }
+            from ..services import publish_tiktok
+
+            resultado = publish_tiktok.publicar_campanha(campanha)
     except LLMError as exc:
         campaigns.marcar_publicada(campanha_id, {}, status="erro", erro=str(exc))
         raise HTTPException(status_code=400, detail=str(exc))

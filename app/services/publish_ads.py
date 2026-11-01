@@ -1,6 +1,7 @@
-"""Engines de publicação de campanhas — Google Ads (REST mutates) e Meta Ads (Marketing API).
+"""Engines de publicação de campanhas — Google Ads (REST mutates), Meta Ads
+(Marketing API) e TikTok Ads (Marketing API OAuth).
 
-Best-effort com erros atribuídos por etapa. TikTok permanece manual (guia no plano).
+Best-effort com erros atribuídos por etapa. Tudo é criado PAUSADO para revisão.
 """
 import httpx
 

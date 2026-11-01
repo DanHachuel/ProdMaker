@@ -3,6 +3,23 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.15 — 2026-10-31
+
+- **Fase 11 — TikTok Ads real + Anti-Fraude AdsPixel (Redis).**
+- **TikTok Ads (publicação automática):** `publish_tiktok.py` — troca do auth_code por
+  access_token/refresh_token (`POST /api/tiktok/token`) e criação de campanha + grupo
+  PAUSADOS via Marketing API v1.3 (objective CONVERSIONS, budget diário US$,
+  placement automático); passo final do criativo com instrução honesta quando não há
+  mídia. Erros da API atribuídos. Card TikTok em Chaves de API ganhou auth_code +
+  botão "Trocar auth_code por token". AdsCreator passa a publicar TikTok de verdade.
+- **Anti-Fraude (AdsPixel):** `fraude.py` seguindo o padrão do redis-datasets/fraud-detection —
+  **IP blacklist (Redis Cuckoo Filter)** + **click spamming (Sorted Set com janela de 60s e
+  limite de 10 cliques)**; **fallback SQLite automático sem Redis**; página **Anti-Fraude**
+  (/tracking/fraude) com status do motor, bloqueio/desbloqueio manual, cópia da lista e
+  métricas de spam 24h. O `/track` agora avalia IP bloqueado antes de gravar e o pixel
+  nunca quebra a página do visitante. Card **Redis** em Chaves de API (REDIS_URL).
+- OAuth Google Ads (item 1 da Fase 11) já estava entregue na 0.1.12.
+
 ## 0.1.14 — 2026-10-31
 
 - **Fase 10 — REVISÃO (fechamento das lacunas apontadas na criação de produto/PDF).**
