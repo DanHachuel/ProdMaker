@@ -3,6 +3,21 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.18 — 2026-11-02
+
+- **HOTFIX — Motor de Publicação: 1 repositório por domínio + 1 pasta por produto.**
+- `publish.py` reescrito: resolve o dono via `GET /user`; verifica `GET /repos/{owner}/{dominio}`
+  e **cria o repositório automaticamente** (`POST /user/repos`, público, auto_init) quando não
+  existe; commit em `{product_slug}/index.html` (atualizando sha quando o arquivo já existe);
+  retorno com `repo`, `repo_criado`, `path`, `pages_url` = `https://{dominio}/{slug}/`.
+- `POST /api/paginas/{id}/publicar` agora recebe `{dominio_id}`, **valida que o domínio existe
+  e está online**, deriva o slug do produto vinculado e grava `dominio_id` + URL final em
+  `paginas` (nova coluna `dominio_id`, migração automática).
+- Frontend: **modal "Publicar" com dropdown de domínios cadastrados** (pendentes desabilitados),
+  aviso "Se o repositório para este domínio ainda não existir, ele será criado automaticamente",
+  resultado com repo/caminho/link final; Builder passa a publicar no primeiro domínio online.
+- Sem token GitHub: erro amigável com instrução (PAT com escopo repo em Chaves de API).
+
 ## 0.1.17 — 2026-11-01
 
 - **HOTFIX — servidor encerrando sozinho no Windows (CMD/MobaXterm/PowerShell).**

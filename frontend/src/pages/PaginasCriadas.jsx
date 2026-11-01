@@ -23,11 +23,16 @@ export default function PaginasCriadas() {
   const [editorSaving, setEditorSaving] = useState(false);
   const [publicando, setPublicando] = useState(null);
   const [publishInfo, setPublishInfo] = useState(null); // { titulo, result }
+  const [dominios, setDominios] = useState([]);
+  const [pubModal, setPubModal] = useState(null); // página a publicar
+  const [dominioEscolhido, setDominioEscolhido] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setPaginas(await api.paginas());
+      const [lista, dominiosData] = await Promise.all([api.paginas(), api.dominios().catch(() => [])]);
+      setPaginas(lista);
+      setDominios(dominiosData);
     } catch (err) {
       toast(err.message || "Falha ao carregar páginas.");
     } finally {
@@ -63,11 +68,24 @@ export default function PaginasCriadas() {
     }
   };
 
-  const publicar = async (page) => {
+  const abrirPublicar = (page) => {
+    const online = dominios.filter((d) => d.status === "online");
+    if (online.length === 0) {
+      toast("Nenhum domínio online. Cadastre e verifique um domínio em AdsHosting → Domínios.");
+      return;
+    }
+    setDominioEscolhido(page.dominio_id ? String(page.dominio_id) : String(online[0].id));
+    setPubModal(page);
+  };
+
+  const confirmarPublicar = async () => {
+    const page = pubModal;
+    if (!page || !dominioEscolhido) return;
     setPublicando(page.id);
     try {
-      const updated = await api.publicarPagina(page.id);
-      toast(`"${page.titulo}" publicada no GitHub!`);
+      const updated = await api.publicarPagina(page.id, Number(dominioEscolhido));
+      toast(`"${page.titulo}" publicada!`);
+      setPubModal(null);
       setPublishInfo({ titulo: page.titulo, result: updated.publish_result });
       await load();
     } catch (err) {
@@ -136,8 +154,8 @@ export default function PaginasCriadas() {
                   <a href={`/api/paginas/${page.id}/download`} title="Download HTML" style={{ color: "inherit", textDecoration: "none" }}>⬇️</a>
                   <span title="Editar HTML" onClick={() => abrirEditor(page)}>✏️</span>
                   <span
-                    title={publicando === page.id ? "Publicando via GitHub…" : "Publicar (GitHub → Cloudflare Pages)"}
-                    onClick={() => publicar(page)}
+                    title={publicando === page.id ? "Publicando via GitHub…" : "Publicar em um domínio (GitHub)"}
+                    onClick={() => abrirPublicar(page)}
                   >
                     {publicando === page.id ? "⏳" : "🚀"}
                   </span>
@@ -150,8 +168,9 @@ export default function PaginasCriadas() {
       </table>
 
       <p className="placeholder-note" style={{ marginTop: "16px" }}>
-        💡 Publicação: o HTML é enviado ao repositório GitHub configurado em Chaves de API.
-        Se o repositório estiver conectado a um projeto no Cloudflare Pages, o deploy é automático.
+        💡 Publicação: cada domínio tem seu **próprio repositório no GitHub** e cada produto
+        tem sua **própria pasta** (`{produto}/index.html`) — o link final fica
+        `https://{dominio}/{produto}/`. Configure o token GitHub em Chaves de API.
       </p>
 
       <Modal open={Boolean(editor)} title={`Editar HTML — ${editor?.titulo || ""}`} onClose={() => setEditor(null)}>
@@ -166,10 +185,36 @@ export default function PaginasCriadas() {
         </button>
       </Modal>
 
+      <Modal open={Boolean(pubModal)} title={`🚀 Publicar — ${pubModal?.titulo || ""}`} onClose={() => setPubModal(null)}>
+        <div className="form-group">
+          <label>Domínio cadastrado</label>
+          <select value={dominioEscolhido} onChange={(e) => setDominioEscolhido(e.target.value)}>
+            {dominios.map((dominio) => (
+              <option key={dominio.id} value={dominio.id} disabled={dominio.status !== "online"}>
+                {dominio.nome} {dominio.status === "online" ? "(online)" : "(pendente — não pode publicar)"}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="placeholder-note" style={{ marginBottom: "14px" }}>
+          ⚠️ Se o repositório para este domínio ainda não existir, ele será criado automaticamente no seu GitHub
+          (público). A página entra na pasta do produto: <code>{`{produto}/index.html`}</code>.
+        </p>
+        <button className="btn-primary" onClick={confirmarPublicar} disabled={publicando || !dominioEscolhido} style={{ width: "100%" }}>
+          {publicando ? "Publicando…" : "🚀 Publicar agora"}
+        </button>
+      </Modal>
+
       <Modal open={Boolean(publishInfo)} title={`🚀 Publicada — ${publishInfo?.titulo || ""}`} onClose={() => setPublishInfo(null)}>
-        <p style={{ fontSize: "14px", marginBottom: "10px" }}><strong>Arquivo:</strong> {publishInfo?.result?.path}</p>
+        <p style={{ fontSize: "14px", marginBottom: "10px" }}>
+          <strong>Arquivo:</strong> {publishInfo?.result?.path} no repositório{" "}
+          <a href={publishInfo?.result?.repo_url} target="_blank" rel="noreferrer" style={{ color: "var(--primary)" }}>{publishInfo?.result?.repo}</a>
+          {publishInfo?.result?.repo_criado && <span style={{ color: "var(--success)" }}> (criado automaticamente ✅)</span>}
+        </p>
         <p style={{ marginBottom: "6px" }}><a href={publishInfo?.result?.commit_url} target="_blank" rel="noreferrer" style={{ color: "var(--primary)" }}>Commit no GitHub ↗</a></p>
-        <p style={{ marginBottom: "12px" }}><a href={publishInfo?.result?.pages_url} target="_blank" rel="noreferrer" style={{ color: "var(--primary)" }}>Página pública (GitHub Pages) ↗</a></p>
+        <p style={{ marginBottom: "12px", fontSize: "15px", fontWeight: 600 }}>
+          🔗 Link final: <a href={publishInfo?.result?.pages_url} target="_blank" rel="noreferrer" style={{ color: "var(--primary)" }}>{publishInfo?.result?.pages_url}</a>
+        </p>
         <p className="placeholder-note">{publishInfo?.result?.aviso}</p>
       </Modal>
     </section>

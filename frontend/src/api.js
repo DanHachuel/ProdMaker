@@ -47,7 +47,7 @@ export const api = {
   createPagina: (body) => request("/api/paginas", { method: "POST", body: JSON.stringify(body) }),
   paginaHtml: (id) => request(`/api/paginas/${id}/html`),
   updatePaginaHtml: (id, html) => request(`/api/paginas/${id}/html`, { method: "PUT", body: JSON.stringify({ html }) }),
-  publicarPagina: (id) => request(`/api/paginas/${id}/publicar`, { method: "POST" }),
+  publicarPagina: (id, dominioId) => request(`/api/paginas/${id}/publicar`, { method: "POST", body: JSON.stringify({ dominio_id: dominioId }) }),
   deletePagina: (id) => request(`/api/paginas/${id}`, { method: "DELETE" }),
 
   dominios: () => request("/api/dominios"),

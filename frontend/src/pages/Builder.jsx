@@ -133,9 +133,13 @@ export default function Builder() {
       if (!landing) throw new Error("Gere a landing page no Passo 3 antes de publicar.");
       setPublicando(true);
       try {
-        const result = await api.publicarPagina(landing.id);
+        const dominios = await api.dominios().catch(() => []);
+        const online = dominant => dominant.status === "online";
+        const dominio = (Array.isArray(dominios) ? dominios : []).find(online);
+        if (!dominio) throw new Error("Nenhum domínio online — cadastre e verifique em AdsHosting → Domínios.");
+        const result = await api.publicarPagina(landing.id, dominio.id);
         setLanding(result);
-        return "Página publicada no GitHub (deploy automático no Cloudflare Pages)!";
+        return `Publicada em ${dominio.nome}: ${result.published_url}`;
       } finally {
         setPublicando(false);
       }

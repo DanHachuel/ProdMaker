@@ -55,6 +55,7 @@ TABLES = {
             titulo TEXT NOT NULL,
             tipo TEXT NOT NULL,
             produto_id INTEGER,
+            dominio_id INTEGER,
             idioma TEXT NOT NULL DEFAULT 'Portugues',
             html_path TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'rascunho',
@@ -297,6 +298,11 @@ def _create_tables(conn) -> list[str]:
             add_column_if_missing(conn, table, "user_id TEXT NOT NULL DEFAULT ''", "user_id")
         except Exception as exc:  # noqa: BLE001
             erros.append(f"user_id/{table}: {exc}")
+    # Migracao especifica: dominio_id em paginas (hotfix 0.1.18)
+    try:
+        add_column_if_missing(conn, "paginas", "dominio_id INTEGER", "dominio_id")
+    except Exception as exc:  # noqa: BLE001
+        erros.append(f"dominio_id/paginas: {exc}")
     for index in ("CREATE INDEX IF NOT EXISTS idx_vendas_gclid ON vendas (gclid)", "CREATE INDEX IF NOT EXISTS idx_visitas_gclid ON visitas (gclid)"):
         try:
             conn.execute(index)

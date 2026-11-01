@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from ..services.database import get_db, now_str, row_to_dict
 from ..services.llm import LLMError
 from ..services.pages import gerar_pagina, salvar_html
-from ..services.publish import publicar_pagina
+from ..services.publish import publicar_pagina, slugify
 from ..services.clone import clonar_url
 from ..services.store import STORAGE
 
@@ -113,20 +113,48 @@ def download_pagina(page_id: int):
     return FileResponse(path, filename=f"{record['titulo']}.html", media_type="text/html")
 
 
+class PublicarBody(BaseModel):
+    dominio_id: int
+
+
+def _get_dominio_or_404(dominio_id: int) -> dict:
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM dominios WHERE id = ?", (dominio_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Domínio não encontrado — cadastre-o em AdsHosting.")
+    return row_to_dict(row)
+
+
+def _product_slug(page: dict) -> str:
+    """Slugar do produto vinculado (pasta no repositório do domínio)."""
+    if page.get("produto_id"):
+        produto = _get_produto(page["produto_id"])
+        if produto and produto.get("nome"):
+            return slugify(produto["nome"])
+    return slugify(page["titulo"])
+
+
 @router.post("/{page_id}/publicar")
-def publicar(page_id: int):
+def publicar(page_id: int, body: PublicarBody):
     record = _get_or_404(page_id)
+    dominio = _get_dominio_or_404(body.dominio_id)
+    if dominio["status"] != "online":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Domínio {dominio['nome']} ainda não está online (NS pendente). Verifique em AdsHosting → Domínios.",
+        )
     path = STORAGE / record["html_path"] if record["html_path"] else None
     if not path or not path.exists():
         raise HTTPException(status_code=404, detail="HTML não encontrado.")
+    slug = _product_slug(record)
     try:
-        result = publicar_pagina(page_id, record["titulo"], path.read_text(encoding="utf-8"))
+        result = publicar_pagina(record["titulo"], path.read_text(encoding="utf-8"), dominio["nome"], slug)
     except LLMError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     with get_db() as conn:
         conn.execute(
-            "UPDATE paginas SET status = 'publicada', published_url = ?, updated_at = ? WHERE id = ?",
-            (result["pages_url"], now_str(), page_id),
+            "UPDATE paginas SET status = 'publicada', published_url = ?, dominio_id = ?, updated_at = ? WHERE id = ?",
+            (result["pages_url"], dominio["id"], now_str(), page_id),
         )
     updated = _get_or_404(page_id)
     updated["publish_result"] = result
