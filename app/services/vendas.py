@@ -224,6 +224,20 @@ def registrar_venda(data: dict) -> dict:
         f"{record.get('produto_nome') or 'Produto'} — R$ {record.get('valor')} ({record.get('fonte')})"
         + (f" · GCLID {record['gclid'][:20]}" if record.get("gclid") else ""),
     )
+
+    try:
+        from . import email_mkt
+
+        email_mkt.aplicar_gatilho(
+            "venda_recebida",
+            {
+                "nome": (record.get("comprador_email") or "cliente").split("@")[0],
+                "produto": record.get("produto_nome") or "seu produto",
+                "valor": record.get("valor") or "",
+            },
+        )
+    except Exception:
+        pass  # e-mail nunca quebra o registro da venda
     return record
 
 

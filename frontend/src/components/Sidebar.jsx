@@ -32,6 +32,8 @@ const MENU = [
   { to: "/pinterest", emoji: "📌", label: "Pinterest" },
   "divider",
   { to: "/contas-google", emoji: "🔑", label: "Contas do Google" },
+  { to: "/configuracoes/plano", emoji: "💳", label: "Plano & Assinatura" },
+  { to: "/configuracoes/email", emoji: "📧", label: "E-mail Marketing" },
   { to: "/api-keys", emoji: "🔌", label: "Chaves de API" },
   { to: "/notificacoes", emoji: "🔔", label: "Notificações" },
   { to: "/logs", emoji: "📋", label: "Logs" },

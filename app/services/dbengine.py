@@ -31,7 +31,8 @@ def row_to_dict(row) -> dict:
 
 
 def dsn() -> str | None:
-    return (os.environ.get("DATABASE_URL") or "").strip() or None
+    """Connection string do PostgreSQL — aceita DATABASE_URL ou SUPABASE_DB_URL."""
+    return (os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_URL") or "").strip() or None
 
 
 def is_postgres() -> bool:

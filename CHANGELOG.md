@@ -3,6 +3,26 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.16 — 2026-10-31
+
+- **Fase 12 — Billing Stripe + E-mail Marketing (AdsAcademy) + Supabase multi-tenant pronto.**
+- **Billing:** `seed/planos.json` (Local grátis / Lançador PRO R$97 / Escala AGENCY R$297),
+  página **Plano & Assinatura** com cards, e-mail de conta e botão Assinar (abre o
+  Checkout do Stripe em nova aba); `POST /api/billing/checkout`, `/api/billing/assinatura`,
+  `/api/billing/historico` e **webhook público** `/api/billing/webhook` com verificação
+  de assinatura HMAC-SHA256 (t=...,v1=...) processando checkout.session.completed,
+  invoice.paid e customer.subscription.deleted. Sem chaves Stripe o app segue 100%
+  liberado em modo local (nenhuma trava de pré-registo).
+- **E-mail Marketing (AdsAcademy):** sequências com gatilho (`venda_recebida` dispara
+  automaticamente a cada webhook de venda, `produto_salvo`, `manual`), variáveis
+  {{nome}}/{{produto}}/{{valor}}/{{link}}, envio pelo apprise já integrado (mailtos://,
+  tgram://...), editor de sequências, envio manual e histórico com status/erro. A
+  plataforma completa emareach fica como backlog da nuvem.
+- **Supabase multi-tenant:** `DATABASE_URL` agora também aceita o alias **`SUPABASE_DB_URL`**
+  (connection string do Supabase) mantendo SQLite como fallback — user_id já cobre as
+  15 tabelas; a ativação do multi-tenant depende apenas do Supabase Auth (backlog).
+- Novas tabelas: `assinaturas`, `email_sequencias`, `email_envios`.
+
 ## 0.1.15 — 2026-10-31
 
 - **Fase 11 — TikTok Ads real + Anti-Fraude AdsPixel (Redis).**

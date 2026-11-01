@@ -1,0 +1,56 @@
+{
+  "planos": [
+    {
+      "id": "local",
+      "nome": "Local (grátis)",
+      "preco": 0,
+      "moeda": "BRL",
+      "intervalo": "eterno",
+      "descricao": "Instalação local gratuita — tudo liberado na sua máquina. Sem travas.",
+      "recursos": [
+        "Infoprodutos + PDF ilimitados",
+        "Landing pages e AdsPages",
+        "Campanhas Google/Meta/TikTok",
+        "Tracking e Anti-Fraude",
+        "Chaves de API sempre suas"
+      ],
+      "stripe_price_id": "",
+      "destaque": false
+    },
+    {
+      "id": "lancador",
+      "nome": "Lançador PRO",
+      "preco": 97,
+      "moeda": "BRL",
+      "intervalo": "mês",
+      "descricao": "Para quem vive de lançamentos: nuvem, automações e entregas.",
+      "recursos": [
+        "Tudo do Local",
+        "Nuvem multi-dispositivo (Supabase)",
+        "Automações AdsBot na nuvem",
+        "E-mail marketing com sequências",
+        "Suporte prioritário"
+      ],
+      "stripe_price_id": "",
+      "destaque": true
+    },
+    {
+      "id": "escala",
+      "nome": "Escala AGENCY",
+      "preco": 297,
+      "moeda": "BRL",
+      "intervalo": "mês",
+      "descricao": "Para agências e operações multi-nicho multi-usuário.",
+      "recursos": [
+        "Tudo do Lançador PRO",
+        "Múltiplos usuários (multi-tenant)",
+        "Workspaces por cliente",
+        "Relatórios white-label",
+        "Onboarding dedicado"
+      ],
+      "stripe_price_id": "",
+      "destaque": false
+    }
+  ],
+  "nota": "Preencha stripe_price_id com os Price IDs reais do Stripe (formato price_...). Sem chaves Stripe em Chaves de API, o app funciona 100% local — nenhuma trava de pré-registo."
+}

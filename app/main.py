@@ -15,7 +15,7 @@ from .services.database import ensure_db, get_db, now_str, row_to_dict
 from .services.llm import LLMError, analyze_product, list_providers
 from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_master_code, get_settings, save_settings
 
-APP_VERSION = "0.1.15"
+APP_VERSION = "0.1.16"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -43,6 +43,8 @@ from .api import invest as invest_router  # noqa: E402
 from .api import builder as builder_router  # noqa: E402
 from .api import fraude as fraude_router  # noqa: E402
 from .api import tiktok as tiktok_router  # noqa: E402
+from .api import billing as billing_router  # noqa: E402
+from .api import email_mkt as email_mkt_router  # noqa: E402
 
 app.include_router(llm_router.router)
 app.include_router(infoprodutos_router.router)
@@ -62,6 +64,8 @@ app.include_router(invest_router.router)
 app.include_router(builder_router.router)
 app.include_router(fraude_router.router)
 app.include_router(tiktok_router.router)
+app.include_router(billing_router.router)
+app.include_router(email_mkt_router.router)
 
 ensure_db()
 
@@ -268,7 +272,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.15"}
+    return {"version": APP_VERSION, "canonical": "0.1.16"}
 
 
 @app.get("/api/settings")

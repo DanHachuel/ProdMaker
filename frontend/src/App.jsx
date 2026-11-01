@@ -26,6 +26,8 @@ import Faq from "./pages/Faq";
 import ContasGoogle from "./pages/ContasGoogle";
 import Builder from "./pages/Builder";
 import AntiFraude from "./pages/AntiFraude";
+import Plano from "./pages/Plano";
+import EmailMkt from "./pages/EmailMkt";
 import * as Pages from "./pages/placeholders";
 
 const AppCtx = createContext(null);
@@ -117,6 +119,8 @@ export default function App() {
                 <Route path="/tracking/vendas" element={<Vendas />} />
                 <Route path="/tracking/gclid" element={<Gclid />} />
                 <Route path="/tracking/fraude" element={<AntiFraude />} />
+                <Route path="/configuracoes/plano" element={<Plano />} />
+                <Route path="/configuracoes/email" element={<EmailMkt />} />
                 <Route path="/adsbot" element={<AdsBot />} />
                 <Route path="/pinterest" element={<Pinterest />} />
                 <Route path="/contas-google" element={<ContasGoogle />} />

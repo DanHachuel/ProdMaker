@@ -221,6 +221,42 @@ TABLES = {
             created_at TEXT NOT NULL
         )
     """,
+    "assinaturas": """
+        CREATE TABLE IF NOT EXISTS assinaturas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL DEFAULT '',
+            plano TEXT NOT NULL DEFAULT '',
+            email TEXT NOT NULL DEFAULT '',
+            stripe_ref TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'checkout',
+            current_period_end TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+    """,
+    "email_sequencias": """
+        CREATE TABLE IF NOT EXISTS email_sequencias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL DEFAULT '',
+            nome TEXT NOT NULL,
+            gatilho TEXT NOT NULL DEFAULT 'manual',
+            assunto TEXT NOT NULL,
+            corpo TEXT NOT NULL,
+            ativo INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        )
+    """,
+    "email_envios": """
+        CREATE TABLE IF NOT EXISTS email_envios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL DEFAULT '',
+            sequencia_id INTEGER NOT NULL DEFAULT 0,
+            destino TEXT NOT NULL DEFAULT '',
+            assunto TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pendente',
+            erro TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+    """,
 }
 
 ALL_TABLES = list(TABLES.keys())

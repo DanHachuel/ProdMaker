@@ -107,6 +107,18 @@ export const api = {
   fraudeDesbloquear: (ip) => request(`/api/fraude/ips/${encodeURIComponent(ip)}`, { method: "DELETE" }),
   tiktokToken: () => request("/api/tiktok/token", { method: "POST" }),
 
+  billingPlanos: () => request("/api/billing/planos"),
+  billingAssinatura: () => request("/api/billing/assinatura"),
+  billingHistorico: () => request("/api/billing/historico"),
+  billingCheckout: (body) => request("/api/billing/checkout", { method: "POST", body: JSON.stringify(body) }),
+
+  emailSequencias: () => request("/api/email/sequencias"),
+  emailCriar: (body) => request("/api/email/sequencias", { method: "POST", body: JSON.stringify(body) }),
+  emailAtualizar: (id, body) => request(`/api/email/sequencias/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  emailRemover: (id) => request(`/api/email/sequencias/${id}`, { method: "DELETE" }),
+  emailEnviar: (body) => request("/api/email/enviar", { method: "POST", body: JSON.stringify(body) }),
+  emailHistorico: () => request("/api/email/historico"),
+
   googleOAuthUrl: () => request("/api/google/oauth/url"),
 
   investimentos: () => request("/api/investimentos"),
