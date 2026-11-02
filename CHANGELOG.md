@@ -3,6 +3,17 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.19 — 2026-11-02
+
+- **HOTFIX 2 — launcher em modo SUPERVISOR (servidor encerrando sozinho).**
+- Se o processo do servidor morrer (sinal do terminal, quirk de MobaXterm/Cygwin,
+  crash), o launcher **reinicia automaticamente** (até 3 tentativas, backoff 2s) em
+  vez de fechar o terminal; só desiste depois de 3 mortes consecutivas — e ainda
+  assim imprime o comando manual para ver o traceback.
+- Heartbeat no terminal a cada 60s ("servidor ativo...") para o usuário ver que
+  está vivo; tratamento explícito de SIGINT/SIGTERM/**SIGHUP**; `shell: true` no
+  Windows mantido (terminal anexado); `cli.mjs` reescrito sem mojibake.
+
 ## 0.1.18 — 2026-11-02
 
 - **HOTFIX — Motor de Publicação: 1 repositório por domínio + 1 pasta por produto.**

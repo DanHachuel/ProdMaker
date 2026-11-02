@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* ProdMaker launcher ??? install | run | doctor
+/* ProdMaker launcher — install | run | doctor
  * REGRA ZERO: este launcher NUNCA abre o navegador. Apenas imprime a URL.
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -14,7 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.18";
+const APP_VERSION = "0.1.19";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -115,47 +115,6 @@ function runCommand(cmd, args, options = {}) {
   });
 }
 
-async function commandInstall(flags) {
-  const home = resolveHome();
-  console.log(`ProdMaker ${APP_VERSION} ??? install`);
-  console.log(`Pasta de dados (PRODMAKER_HOME): ${home}`);
-  const settingsPath = ensureInstallSkeleton(home);
-  console.log(`Storage pronto. Settings: ${settingsPath}`);
-
-  if (flags.skipPythonDeps) {
-    console.log(" (--skip-python-deps) Depend??ncias Python ignoradas.");
-  } else {
-    const base = findSystemPython();
-    if (!base) {
-      console.error("Python 3.10+ n??o encontrado. Instale o Python e rode 'prodmaker install' novamente.");
-      process.exit(1);
-    }
-    const venvDir = path.join(home, "venv");
-    if (!venvPython(home)) {
-      console.log("Criando ambiente virtual Python...");
-      const venvArgs = process.platform === "win32" && base === "py" ? ["-3", "-m", "venv", venvDir] : ["-m", "venv", venvDir];
-      const code = await runCommand(base, venvArgs);
-      if (code !== 0) {
-        console.error("Falha ao criar o venv.");
-        process.exit(1);
-      }
-    }
-    const python = venvPython(home);
-    console.log("Instalando depend??ncias Python (requirements.txt)...");
-    const code = await runCommand(python, ["-m", "pip", "install", "--upgrade", "pip"]);
-    const code2 = await runCommand(python, ["-m", "pip", "install", "-r", REQUIREMENTS]);
-    if (code2 !== 0) {
-      console.error("Falha ao instalar depend??ncias Python.");
-      process.exit(1);
-    }
-  }
-
-  console.log("");
-  console.log("Instala????o conclu??da. Para iniciar:");
-  console.log("  npx --yes @danhachuel/prodmaker");
-  console.log("Depois abra http://localhost:8188 MANUALMENTE no navegador (o sistema nunca abre o navegador).");
-}
-
 async function fetchMasterCode(python, home) {
   if (python) {
     try {
@@ -171,11 +130,52 @@ async function fetchMasterCode(python, home) {
   return (process.env.PRODMAKER_MASTER_CODE || "").trim() || "1234";
 }
 
+async function commandInstall(flags) {
+  const home = resolveHome();
+  console.log(`ProdMaker ${APP_VERSION} — install`);
+  console.log(`Pasta de dados (PRODMAKER_HOME): ${home}`);
+  const settingsPath = ensureInstallSkeleton(home);
+  console.log(`Storage pronto. Settings: ${settingsPath}`);
+
+  if (flags.skipPythonDeps) {
+    console.log(" (--skip-python-deps) Dependências Python ignoradas.");
+  } else {
+    const base = findSystemPython();
+    if (!base) {
+      console.error("Python 3.10+ não encontrado. Instale o Python e rode 'prodmaker install' novamente.");
+      process.exit(1);
+    }
+    const venvDir = path.join(home, "venv");
+    if (!venvPython(home)) {
+      console.log("Criando ambiente virtual Python...");
+      const venvArgs = process.platform === "win32" && base === "py" ? ["-3", "-m", "venv", venvDir] : ["-m", "venv", venvDir];
+      const code = await runCommand(base, venvArgs);
+      if (code !== 0) {
+        console.error("Falha ao criar o venv.");
+        process.exit(1);
+      }
+    }
+    const python = venvPython(home);
+    console.log("Instalando dependências Python (requirements.txt)...");
+    await runCommand(python, ["-m", "pip", "install", "--upgrade", "pip"]);
+    const code2 = await runCommand(python, ["-m", "pip", "install", "-r", REQUIREMENTS]);
+    if (code2 !== 0) {
+      console.error("Falha ao instalar dependências Python.");
+      process.exit(1);
+    }
+  }
+
+  console.log("");
+  console.log("Instalação concluída. Para iniciar:");
+  console.log("  npx --yes @danhachuel/prodmaker");
+  console.log("Depois abra http://localhost:8188 MANUALMENTE no navegador (o sistema nunca abre o navegador).");
+}
+
 async function commandRun() {
   const home = resolveHome();
   const settingsPath = storagePath(home, "state", "settings.json");
   if (!fs.existsSync(settingsPath)) {
-    console.error("ProdMaker ainda n??o est?? instalado. Rode primeiro: prodmaker install");
+    console.error("ProdMaker ainda não está instalado. Rode primeiro: prodmaker install");
     process.exit(1);
   }
   let preferred = DEFAULT_PORT;
@@ -186,74 +186,106 @@ async function commandRun() {
 
   const python = venvPython(home) || findSystemPython();
   if (!python) {
-    console.error("Python n??o encontrado. Rode: prodmaker install");
+    console.error("Python não encontrado. Rode: prodmaker install");
     process.exit(1);
   }
   if (!fs.existsSync(path.join(APP_DIR, "main.py"))) {
-    console.error("Backend n??o encontrado (app/main.py).");
+    console.error("Backend não encontrado (app/main.py).");
     process.exit(1);
   }
 
   const port = await pickPort(preferred);
   if (!port) {
-    console.error("Nenhuma porta dispon??vel entre " + preferred + " e " + (preferred + 11) + ".");
+    console.error(`Nenhuma porta disponível entre ${preferred} e ${preferred + 11}.`);
     process.exit(1);
   }
-  if (port !== preferred) console.log(`Porta ${preferred} ocupada ??? usando ${port}.`);
+  if (port !== preferred) console.log(`Porta ${preferred} ocupada — usando ${port}.`);
 
-  const pythonCmd = venvPython(home) ? python : python;
-  const pythonArgs = venvPython(home)
-    ? ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)]
-    : process.platform === "win32" && python === "py"
-      ? ["-3", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)]
-      : ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)];
+  const pythonArgs =
+    venvPython(home)
+      ? ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)]
+      : process.platform === "win32" && python === "py"
+        ? ["-3", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)]
+        : ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)];
 
   console.log("Iniciando ProdMaker...");
-  const masterCode = await fetchMasterCode(pythonCmd, home);
+  const masterCode = await fetchMasterCode(python, home);
   printUrlBox(port, masterCode);
-  console.log("O servidor est?? rodando. Mantenha esta janela aberta. Pressione CTRL+C para encerrar.");
+  console.log("O servidor está rodando. Mantenha esta janela aberta. Pressione CTRL+C para encerrar.");
+  console.log("Se o servidor cair, o launcher tenta reiniciar sozinho (até 3 vezes).");
   console.log("");
 
   const env = { ...process.env, PRODMAKER_HOME: home, PRODMAKER_PORT: String(port) };
-  // No Windows usamos shell:true para o terminal ficar anexado ao processo
-  // (comportamento correto no CMD/MobaXterm/PowerShell).
-  const useShell = process.platform === "win32";
-  const child = spawn(pythonCmd, pythonArgs, {
-    cwd: PKG_ROOT,
-    stdio: "inherit",
-    env,
-    shell: useShell,
-  });
-  const started = Date.now();
-  const stop = () => {
-    child.kill();
+
+  // SUPERVISOR: se o processo do servidor morrer (sinal do terminal, quirk de
+  // MobaXterm/Cygwin, crash), o launcher reinicia — até 3 tentativas com
+  // backoff de 2s. Se morrer 3 vezes seguidas, sai com diagnóstico.
+  const MAX_RESTARTS = 3;
+  let restarts = 0;
+  let currentChild = null;
+  let stopping = false;
+  let lastStart = Date.now();
+
+  const stopAll = () => {
+    stopping = true;
+    if (currentChild) currentChild.kill();
     process.exit(0);
   };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
-  child.on("error", (error) => {
-    console.error(`Falha ao iniciar o Python (${error.message}).`);
-    console.error("Rode manualmente para ver o erro completo:");
-    console.error(`  ${pythonCmd} -m uvicorn app.main:app --host 127.0.0.1 --port ${port}`);
-    process.exit(1);
-  });
-  child.on("close", (code) => {
-    if (Date.now() - started < 3000 && code !== 0) {
-      console.error(`O servidor encerrou imediatamente (c??digo ${code ?? 0}). Poss??vel erro de banco ou depend??ncia.`);
-      console.error("Para ver o traceback completo, rode manualmente (dentro da pasta do ProdMaker):");
-      console.error(`  cd ${home} && .\\venv\\Scripts\\python.exe -m app.main`);
-      console.error("  (ou .\\venv\\Scripts\\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port " + port + ")");
-      process.exit(code ?? 1);
-    }
-    console.log(`ProdMaker encerrou (c??digo ${code ?? 0}).`);
-    process.exit(code ?? 0);
-  });
-  // Mant??m o processo vivo enquanto o filho estiver rodando
-  await new Promise((resolve) => child.on("close", resolve));
+  process.on("SIGINT", stopAll);
+  process.on("SIGTERM", stopAll);
+  process.on("SIGHUP", stopAll);
+
+  const heartbeat = setInterval(() => {
+    console.log(`[ProdMaker] servidor ativo em http://localhost:${port} — ${new Date().toLocaleTimeString()}`);
+  }, 60000);
+
+  const startServer = () =>
+    new Promise((resolve) => {
+      lastStart = Date.now();
+      currentChild = spawn(python, pythonArgs, {
+        cwd: PKG_ROOT,
+        stdio: "inherit",
+        env,
+        shell: process.platform === "win32",
+      });
+
+      currentChild.on("error", (error) => {
+        console.error(`Falha ao iniciar o Python (${error.message}).`);
+        resolve({ code: 1 });
+      });
+
+      currentChild.on("close", (code) => {
+        if (stopping) {
+          resolve({ code: code ?? 0 });
+          return;
+        }
+        const vivoMs = Date.now() - lastStart;
+        console.error(`[ProdMaker] O processo do servidor encerrou (código ${code ?? 0}, ${Math.round(vivoMs / 1000)}s ativo).`);
+        if (restarts < MAX_RESTARTS) {
+          restarts += 1;
+          console.error(`[ProdMaker] Reiniciando automaticamente (tentativa ${restarts} de ${MAX_RESTARTS})...`);
+          setTimeout(() => startServer().then(resolve), 2000);
+          return;
+        }
+        resolve({ code: code ?? 1 });
+      });
+    });
+
+  const resultado = await startServer();
+  clearInterval(heartbeat);
+  if (resultado.code !== 0) {
+    console.error("");
+    console.error("O servidor não se manteve no ar. Para ver o traceback completo, rode manualmente (dentro da pasta do ProdMaker):");
+    console.error(`  cd ${home} && .\\venv\\Scripts\\python.exe -m app.main`);
+    console.error(`  (ou .\\venv\\Scripts\\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port ${port})`);
+    process.exit(resultado.code ?? 1);
+  }
+  console.log(`ProdMaker encerrou (código ${resultado.code}).`);
+  process.exit(0);
 }
 
 async function commandDoctor() {
-  console.log(`ProdMaker ${APP_VERSION} ??? doctor`);
+  console.log(`ProdMaker ${APP_VERSION} — doctor`);
   console.log(`Node: ${process.version}`);
   const home = resolveHome();
   console.log(`PRODMAKER_HOME: ${home}`);
@@ -262,10 +294,10 @@ async function commandDoctor() {
   console.log(`Venv: ${venv || "ausente"}`);
   if (venv) {
     const check = spawnSync(venv, ["-c", "import fastapi, uvicorn"], { encoding: "utf8" });
-    console.log(`Depend??ncias Python (fastapi/uvicorn): ${check.status === 0 ? "OK" : "FALTANDO (rode install)"}`);
+    console.log(`Dependências Python (fastapi/uvicorn): ${check.status === 0 ? "OK" : "FALTANDO (rode install)"}`);
   } else {
     const base = findSystemPython();
-    console.log(`Python do sistema: ${base || "n??o encontrado"}`);
+    console.log(`Python do sistema: ${base || "não encontrado"}`);
   }
   console.log(`Backend (app/main.py): ${fs.existsSync(path.join(APP_DIR, "main.py")) ? "OK" : "FALTANDO"}`);
   const dist = path.join(PKG_ROOT, "frontend", "dist", "index.html");
@@ -289,4 +321,3 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-
