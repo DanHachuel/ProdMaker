@@ -6,16 +6,17 @@ import os
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .services.database import ensure_db, get_db, now_str, row_to_dict
+from .deps import get_current_user
+from .services.database import DEV_USER_ID, ensure_db, get_db, now_str, row_to_dict
 from .services.llm import LLMError, analyze_product, list_providers
 from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_master_code, get_settings, save_settings
 
-APP_VERSION = "0.1.20"
+APP_VERSION = "0.1.21"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -150,11 +151,36 @@ def auth_logout(response: Response):
 
 @app.get("/api/auth/session")
 def auth_session(request: Request):
+    # Sessão Supabase (token no header Authorization) tem prioridade
+    authorization = request.headers.get("authorization", "")
+    if authorization.lower().startswith("bearer "):
+        from .deps import get_current_user
+
+        try:
+            user = get_current_user(authorization)
+        except HTTPException:
+            return {"authenticated": False}
+        return {"authenticated": True, "email": user.get("email"), "user_id": user.get("user_id"), "mode": user.get("mode"), "license": get_license()}
     token = request.cookies.get(COOKIE_NAME)
     data = read_token(token) if token else None
     if not data:
         return {"authenticated": False}
-    return {"authenticated": True, "email": data.get("email"), "license": get_license()}
+    return {"authenticated": True, "email": data.get("email"), "user_id": DEV_USER_ID, "mode": "dev", "license": get_license()}
+
+
+@app.get("/api/auth/config")
+def auth_config():
+    """Config pública de auth para o frontend (modo cloud/dev + chaves públicas)."""
+    from .services import auth_supabase
+
+    cfg = auth_supabase.config()
+    return {
+        "mode": "cloud" if auth_supabase.cloud_enabled() else "dev",
+        "supabase_url": cfg["url"],
+        "supabase_anon_key": cfg["key"],
+        "master_code": get_master_code(),
+        "master_alias": MASTER_ALIAS,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -172,60 +198,60 @@ class ProdutoBody(BaseModel):
 
 
 @app.get("/api/produtos")
-def list_produtos():
+def list_produtos(user=Depends(get_current_user)):
     with get_db() as conn:
-        rows = conn.execute("SELECT * FROM produtos ORDER BY updated_at DESC, id DESC").fetchall()
+        rows = conn.execute("SELECT * FROM produtos WHERE user_id = ? ORDER BY updated_at DESC, id DESC", (user["user_id"],)).fetchall()
     return [row_to_dict(row) for row in rows]
 
 
 @app.post("/api/produtos")
-def create_produto(body: ProdutoBody):
+def create_produto(body: ProdutoBody, user=Depends(get_current_user)):
     if not body.nome.strip():
         raise HTTPException(status_code=400, detail="Informe o nome do produto.")
     timestamp = now_str()
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO produtos (nome, plataforma, link_afiliado, comissao, preco, nicho, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'em_analise', ?, ?)",
-            (body.nome.strip(), body.plataforma, body.link_afiliado.strip(), body.comissao, body.preco, body.nicho.strip(), timestamp, timestamp),
+            "INSERT INTO produtos (user_id, nome, plataforma, link_afiliado, comissao, preco, nicho, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'em_analise', ?, ?)",
+            (user["user_id"], body.nome.strip(), body.plataforma, body.link_afiliado.strip(), body.comissao, body.preco, body.nicho.strip(), timestamp, timestamp),
         )
         row = conn.execute("SELECT * FROM produtos WHERE id = ?", (cursor.lastrowid,)).fetchone()
     return row_to_dict(row)
 
 
 @app.put("/api/produtos/{produto_id}")
-def update_produto(produto_id: int, body: ProdutoBody):
+def update_produto(produto_id: int, body: ProdutoBody, user=Depends(get_current_user)):
     if not body.nome.strip():
         raise HTTPException(status_code=400, detail="Informe o nome do produto.")
     with get_db() as conn:
-        found = conn.execute("SELECT id FROM produtos WHERE id = ?", (produto_id,)).fetchone()
+        found = conn.execute("SELECT id FROM produtos WHERE id = ? AND user_id = ?", (produto_id, user["user_id"])).fetchone()
         if not found:
             raise HTTPException(status_code=404, detail="Produto não encontrado.")
         conn.execute(
-            "UPDATE produtos SET nome = ?, plataforma = ?, link_afiliado = ?, comissao = ?, preco = ?, nicho = ?, updated_at = ? WHERE id = ?",
-            (body.nome.strip(), body.plataforma, body.link_afiliado.strip(), body.comissao, body.preco, body.nicho.strip(), now_str(), produto_id),
+            "UPDATE produtos SET nome = ?, plataforma = ?, link_afiliado = ?, comissao = ?, preco = ?, nicho = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+            (body.nome.strip(), body.plataforma, body.link_afiliado.strip(), body.comissao, body.preco, body.nicho.strip(), now_str(), produto_id, user["user_id"]),
         )
         row = conn.execute("SELECT * FROM produtos WHERE id = ?", (produto_id,)).fetchone()
     return row_to_dict(row)
 
 
 @app.delete("/api/produtos/{produto_id}")
-def delete_produto(produto_id: int):
+def delete_produto(produto_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
-        cursor = conn.execute("DELETE FROM produtos WHERE id = ?", (produto_id,))
+        cursor = conn.execute("DELETE FROM produtos WHERE id = ? AND user_id = ?", (produto_id, user["user_id"]))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Produto não encontrado.")
     return {"ok": True}
 
 
 @app.post("/api/produtos/{produto_id}/aprovar")
-def aprovar_produto(produto_id: int):
+def aprovar_produto(produto_id: int, user=Depends(get_current_user)):
     """Aprova o produto e, se houver LLM ativo, gera a análise (plano de ataque).
 
     Sem LLM configurado a aprovação acontece normalmente (sem travas de pré-registo);
     a análise fica pendente e pode ser gerada depois via /api/produtos/{id}/analisar.
     """
     with get_db() as conn:
-        cursor = conn.execute("UPDATE produtos SET status = 'aprovado', updated_at = ? WHERE id = ?", (now_str(), produto_id))
+        cursor = conn.execute("UPDATE produtos SET status = 'aprovado', updated_at = ? WHERE id = ? AND user_id = ?", (now_str(), produto_id, user["user_id"]))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Produto não encontrado.")
         row = conn.execute("SELECT * FROM produtos WHERE id = ?", (produto_id,)).fetchone()
@@ -235,7 +261,7 @@ def aprovar_produto(produto_id: int):
         try:
             analysis = analyze_product(produto)
             with get_db() as conn:
-                conn.execute("UPDATE produtos SET analysis = ? WHERE id = ?", (json.dumps(analysis, ensure_ascii=False), produto_id))
+                conn.execute("UPDATE produtos SET analysis = ? WHERE id = ? AND user_id = ?", (json.dumps(analysis, ensure_ascii=False), produto_id, user["user_id"]))
             produto["analysis"] = analysis
         except LLMError as exc:
             produto["analysis_error"] = str(exc)
@@ -243,10 +269,10 @@ def aprovar_produto(produto_id: int):
 
 
 @app.post("/api/produtos/{produto_id}/analisar")
-def analisar_produto(produto_id: int):
+def analisar_produto(produto_id: int, user=Depends(get_current_user)):
     """Gera (ou regenera) a análise de IA de um produto aprovado."""
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM produtos WHERE id = ?", (produto_id,)).fetchone()
+        row = conn.execute("SELECT * FROM produtos WHERE id = ? AND user_id = ?", (produto_id, user["user_id"])).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
     produto = row_to_dict(row)
@@ -255,7 +281,7 @@ def analisar_produto(produto_id: int):
     except LLMError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     with get_db() as conn:
-        conn.execute("UPDATE produtos SET analysis = ?, updated_at = ? WHERE id = ?", (json.dumps(analysis, ensure_ascii=False), now_str(), produto_id))
+        conn.execute("UPDATE produtos SET analysis = ?, updated_at = ? WHERE id = ? AND user_id = ?", (json.dumps(analysis, ensure_ascii=False), now_str(), produto_id, user["user_id"]))
     produto["analysis"] = analysis
     return produto
 
@@ -272,7 +298,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.20"}
+    return {"version": APP_VERSION, "canonical": "0.1.21"}
 
 
 @app.get("/api/settings")

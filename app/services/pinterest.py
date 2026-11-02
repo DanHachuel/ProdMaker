@@ -9,7 +9,7 @@ import io
 import json
 from pathlib import Path
 
-from .database import get_db, now_str, row_to_dict
+from .database import DEV_USER_ID, get_db, now_str, row_to_dict
 from .llm import LLMError, generate
 from .store import get_settings
 
@@ -25,7 +25,8 @@ def _config() -> dict:
     }
 
 
-def gerar_ideias(produto: dict, board: str = "", link: str = "", quantidade: int = 10) -> dict:
+def gerar_ideias(produto: dict, board: str = "", link: str = "", quantidade: int = 10, user_id: str = "") -> dict:
+    user_id = user_id or DEV_USER_ID
     template_path = SEED_DIR / "prompts" / "pins.md"
     template = template_path.read_text(encoding="utf-8") if template_path.exists() else (
         'Crie {QUANTIDADE} ideias de Pins para {NOME_DO_PRODUTO} no formato '
@@ -57,8 +58,9 @@ def gerar_ideias(produto: dict, board: str = "", link: str = "", quantidade: int
             continue
         with get_db() as conn:
             cursor = conn.execute(
-                "INSERT INTO pins (produto_id, titulo, descricao, texto_imagem, sugestao_imagem, board, link, status, provider, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'ideia', ?, ?)",
+                "INSERT INTO pins (user_id, produto_id, titulo, descricao, texto_imagem, sugestao_imagem, board, link, status, provider, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ideia', ?, ?)",
                 (
+                    user_id,
                     produto.get("id"),
                     titulo[:120],
                     (item.get("descricao") or "")[:500],
@@ -82,10 +84,16 @@ def _clean_json(text: str) -> str:
     return match.group(0) if match else cleaned
 
 
-def listar(produto_id: int | None = None) -> list[dict]:
+def listar(produto_id: int | None = None, user_id: str = "") -> list[dict]:
     query = "SELECT * FROM pins"
     params: tuple = ()
-    if produto_id:
+    if produto_id and user_id:
+        query += " WHERE produto_id = ? AND user_id = ?"
+        params = (produto_id, user_id)
+    elif user_id:
+        query += " WHERE user_id = ?"
+        params = (user_id,)
+    elif produto_id:
         query += " WHERE produto_id = ?"
         params = (produto_id,)
     query += " ORDER BY id DESC"
@@ -94,21 +102,25 @@ def listar(produto_id: int | None = None) -> list[dict]:
     return [row_to_dict(row) for row in rows]
 
 
-def marcar(pin_id: int, status: str) -> dict:
+def marcar(pin_id: int, status: str, user_id: str = "") -> dict:
     validos = {"ideia", "pronto", "agendado", "publicado"}
     if status not in validos:
         raise LLMError(f"Status inválido: {status}")
+    escopo = " AND user_id = ?" if user_id else ""
+    params = (status, pin_id, user_id) if user_id else (status, pin_id)
     with get_db() as conn:
-        cursor = conn.execute("UPDATE pins SET status = ? WHERE id = ?", (status, pin_id))
+        cursor = conn.execute(f"UPDATE pins SET status = ? WHERE id = ?{escopo}", params)
         if cursor.rowcount == 0:
             raise LLMError("Pin não encontrado.")
-        row = conn.execute("SELECT * FROM pins WHERE id = ?", (pin_id,)).fetchone()
+        row = conn.execute(f"SELECT * FROM pins WHERE id = ?{escopo}", params[1:] if user_id else (pin_id,)).fetchone()
     return row_to_dict(row)
 
 
-def remover(pin_id: int) -> None:
+def remover(pin_id: int, user_id: str = "") -> None:
+    escopo = " AND user_id = ?" if user_id else ""
+    params = (pin_id, user_id) if user_id else (pin_id,)
     with get_db() as conn:
-        cursor = conn.execute("DELETE FROM pins WHERE id = ?", (pin_id,))
+        cursor = conn.execute(f"DELETE FROM pins WHERE id = ?{escopo}", params)
         if cursor.rowcount == 0:
             raise LLMError("Pin não encontrado.")
 

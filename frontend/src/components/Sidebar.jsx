@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useApp } from "../App";
+import { supabase } from "../supabase";
 
 const MENU = [
   { to: "/", emoji: "📦", label: "Seus Produtos" },
@@ -61,6 +62,7 @@ export default function Sidebar() {
     });
 
   const handleLogout = async () => {
+    await supabase.signOut();
     await logout();
     navigate("/login");
   };

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ..deps import get_current_user
 from ..services.database import get_db, now_str, row_to_dict
 from ..services.llm import LLMError
 from ..services.pages import gerar_pagina, salvar_html
@@ -36,14 +37,14 @@ def _get_produto(produto_id: int | None):
 
 
 @router.post("")
-def create_pagina(body: PaginaBody):
+def create_pagina(body: PaginaBody, user=Depends(get_current_user)):
     if not body.titulo.strip():
         raise HTTPException(status_code=400, detail="Informe o título da página.")
     timestamp = now_str()
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO paginas (titulo, tipo, produto_id, idioma, html_path, status, created_at, updated_at) VALUES (?, ?, ?, ?, '', 'rascunho', ?, ?)",
-            (body.titulo.strip(), body.tipo, body.produto_id, body.idioma, timestamp, timestamp),
+            "INSERT INTO paginas (user_id, titulo, tipo, produto_id, idioma, html_path, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '', 'rascunho', ?, ?)",
+            (user["user_id"], body.titulo.strip(), body.tipo, body.produto_id, body.idioma, timestamp, timestamp),
         )
         page_id = cursor.lastrowid
 
@@ -59,8 +60,8 @@ def create_pagina(body: PaginaBody):
         salvar_html(page_id, html)
         rel_path = f"pages/{page_id}/index.html"
         with get_db() as conn:
-            conn.execute("UPDATE paginas SET html_path = ?, updated_at = ? WHERE id = ?", (rel_path, now_str(), page_id))
-            row = conn.execute("SELECT * FROM paginas WHERE id = ?", (page_id,)).fetchone()
+            conn.execute("UPDATE paginas SET html_path = ?, updated_at = ? WHERE id = ? AND user_id = ?", (rel_path, now_str(), page_id, user["user_id"]))
+            row = conn.execute("SELECT * FROM paginas WHERE id = ? AND user_id = ?", (page_id, user["user_id"])).fetchone()
         record = row_to_dict(row)
         record["preview_url"] = f"/pages/{page_id}"
         record["provider"] = provider
@@ -72,9 +73,9 @@ def create_pagina(body: PaginaBody):
 
 
 @router.get("")
-def list_paginas():
+def list_paginas(user=Depends(get_current_user)):
     with get_db() as conn:
-        rows = conn.execute("SELECT * FROM paginas ORDER BY id DESC").fetchall()
+        rows = conn.execute("SELECT * FROM paginas WHERE user_id = ? ORDER BY id DESC", (user["user_id"],)).fetchall()
     result = []
     for row in rows:
         record = row_to_dict(row)

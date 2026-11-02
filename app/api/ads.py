@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..deps import get_current_user
 from ..services import adswords, campaigns, publish_ads
 from ..services.database import get_db, row_to_dict
 from ..services.llm import LLMError
@@ -8,12 +9,14 @@ from ..services.llm import LLMError
 router = APIRouter(prefix="/api", tags=["ads"])
 
 
-def _produto_or_none(produto_id: int | None) -> dict:
+def _produto_or_none(produto_id: int | None, user_id: str = "") -> dict:
     if not produto_id:
-        return {"id": None, "nome": "Produto", "nicho": "", "plataforma": ""}
+        return {"id": None, "nome": "Produto", "nicho": "", "plataforma": "", "user_id": user_id}
+    escopo = " AND user_id = ?" if user_id else ""
+    params = (produto_id, user_id) if user_id else (produto_id,)
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM produtos WHERE id = ?", (produto_id,)).fetchone()
-    return row_to_dict(row) if row else {"id": produto_id, "nome": "Produto", "nicho": "", "plataforma": ""}
+        row = conn.execute(f"SELECT * FROM produtos WHERE id = ?{escopo}", params).fetchone()
+    return row_to_dict(row) if row else {"id": produto_id, "nome": "Produto", "nicho": "", "plataforma": "", "user_id": user_id}
 
 
 class KeywordsBody(BaseModel):
@@ -49,32 +52,32 @@ class CampanhaBody(BaseModel):
 
 
 @router.post("/adswords/gerar")
-def adswords_gerar(body: KeywordsBody):
-    produto = _produto_or_none(body.produto_id)
+def adswords_gerar(body: KeywordsBody, user=Depends(get_current_user)):
+    produto = _produto_or_none(body.produto_id, user["user_id"])
     try:
-        return adswords.gerar(produto)
+        return adswords.gerar(produto, user["user_id"])
     except LLMError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/adswords")
-def adswords_listar(produto_id: int | None = None):
-    return adswords.listar(produto_id)
+def adswords_listar(produto_id: int | None = None, user=Depends(get_current_user)):
+    return adswords.listar(produto_id, user["user_id"])
 
 
 @router.post("/adswords")
-def adswords_adicionar(body: PalavraBody):
+def adswords_adicionar(body: PalavraBody, user=Depends(get_current_user)):
     if not body.texto.strip():
         raise HTTPException(status_code=400, detail="Informe a palavra.")
     if body.tipo not in ("positiva", "negativa"):
         raise HTTPException(status_code=400, detail="Tipo inválido.")
-    return adswords.adicionar_manual(_produto_or_none(body.produto_id), body.tipo, body.texto, body.correspondencia)
+    return adswords.adicionar_manual(_produto_or_none(body.produto_id), body.tipo, body.texto, body.correspondencia, user["user_id"])
 
 
 @router.delete("/adswords/{palavra_id}")
-def adswords_remover(palavra_id: int):
+def adswords_remover(palavra_id: int, user=Depends(get_current_user)):
     try:
-        adswords.remover(palavra_id)
+        adswords.remover(palavra_id, user["user_id"])
     except LLMError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return {"ok": True}
@@ -95,34 +98,34 @@ def criativos_gerar(body: CriativosBody):
 
 
 @router.get("/campanhas")
-def campanhas_listar(produto_id: int | None = None):
-    return campaigns.listar(produto_id)
+def campanhas_listar(produto_id: int | None = None, user=Depends(get_current_user)):
+    return campaigns.listar(produto_id, user["user_id"])
 
 
 @router.post("/campanhas")
-def campanhas_criar(body: CampanhaBody):
-    produto = _produto_or_none(body.produto_id)
+def campanhas_criar(body: CampanhaBody, user=Depends(get_current_user)):
+    produto = _produto_or_none(body.produto_id, user["user_id"])
     try:
         plano = campaigns.construir(produto, body.plataforma, body.model_dump())
         if body.nome.strip():
             plano["nome"] = body.nome.strip()
     except LLMError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return campaigns.salvar(plano)
+    return campaigns.salvar(plano, user["user_id"])
 
 
 @router.get("/campanhas/{campanha_id}")
-def campanhas_get(campanha_id: int):
+def campanhas_get(campanha_id: int, user=Depends(get_current_user)):
     try:
-        return campaigns.get(campanha_id)
+        return campaigns.get(campanha_id, user["user_id"])
     except LLMError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.delete("/campanhas/{campanha_id}")
-def campanhas_remover(campanha_id: int):
+def campanhas_remover(campanha_id: int, user=Depends(get_current_user)):
     try:
-        campaigns.remover(campanha_id)
+        campaigns.remover(campanha_id, user["user_id"])
     except LLMError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return {"ok": True}

@@ -7,6 +7,7 @@ import sqlite3
 import time
 
 from .dbengine import (
+    DEV_USER_ID,
     add_column_if_missing,
     is_postgres,
     now_str,  # noqa: F401  (reexportado para os servicos)
@@ -21,7 +22,7 @@ TABLES = {
     "produtos": """
         CREATE TABLE IF NOT EXISTS produtos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             nome TEXT NOT NULL,
             plataforma TEXT NOT NULL DEFAULT 'Outro',
             link_afiliado TEXT NOT NULL DEFAULT '',
@@ -37,7 +38,7 @@ TABLES = {
     "infoprodutos": """
         CREATE TABLE IF NOT EXISTS infoprodutos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             titulo TEXT NOT NULL,
             formato TEXT NOT NULL DEFAULT 'E-book',
             nicho TEXT NOT NULL DEFAULT '',
@@ -51,7 +52,7 @@ TABLES = {
     "paginas": """
         CREATE TABLE IF NOT EXISTS paginas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             titulo TEXT NOT NULL,
             tipo TEXT NOT NULL,
             produto_id INTEGER,
@@ -67,7 +68,7 @@ TABLES = {
     "dominios": """
         CREATE TABLE IF NOT EXISTS dominios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             nome TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pendente',
             cf_zone_id TEXT NOT NULL DEFAULT '',
@@ -81,7 +82,7 @@ TABLES = {
     "visitas": """
         CREATE TABLE IF NOT EXISTS visitas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             event TEXT NOT NULL DEFAULT '',
             page TEXT NOT NULL DEFAULT '',
             gclid TEXT NOT NULL DEFAULT '',
@@ -98,7 +99,7 @@ TABLES = {
     "vendas": """
         CREATE TABLE IF NOT EXISTS vendas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             fonte TEXT NOT NULL DEFAULT 'manual',
             produto_id INTEGER,
             produto_nome TEXT NOT NULL DEFAULT '',
@@ -121,7 +122,7 @@ TABLES = {
     "palavras": """
         CREATE TABLE IF NOT EXISTS palavras (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             produto_id INTEGER,
             produto_nome TEXT NOT NULL DEFAULT '',
             tipo TEXT NOT NULL DEFAULT 'positiva',
@@ -134,7 +135,7 @@ TABLES = {
     "campanhas": """
         CREATE TABLE IF NOT EXISTS campanhas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             produto_id INTEGER,
             plataforma TEXT NOT NULL DEFAULT 'google',
             nome TEXT NOT NULL,
@@ -155,7 +156,7 @@ TABLES = {
     "lancamentos": """
         CREATE TABLE IF NOT EXISTS lancamentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             produto_id INTEGER,
             etapa_atual INTEGER NOT NULL DEFAULT 1,
             status TEXT NOT NULL DEFAULT 'em_andamento',
@@ -167,7 +168,7 @@ TABLES = {
     "notificacoes": """
         CREATE TABLE IF NOT EXISTS notificacoes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             event TEXT NOT NULL DEFAULT '',
             titulo TEXT NOT NULL DEFAULT '',
             mensagem TEXT NOT NULL DEFAULT '',
@@ -180,7 +181,7 @@ TABLES = {
     "pins": """
         CREATE TABLE IF NOT EXISTS pins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             produto_id INTEGER,
             titulo TEXT NOT NULL,
             descricao TEXT NOT NULL DEFAULT '',
@@ -197,7 +198,7 @@ TABLES = {
     "investimentos": """
         CREATE TABLE IF NOT EXISTS investimentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             data TEXT NOT NULL DEFAULT '',
             valor REAL NOT NULL DEFAULT 0,
             fonte TEXT NOT NULL DEFAULT 'manual',
@@ -208,7 +209,7 @@ TABLES = {
     "ips_bloqueados": """
         CREATE TABLE IF NOT EXISTS ips_bloqueados (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             ip TEXT NOT NULL,
             motivo TEXT NOT NULL DEFAULT 'manual',
             origem TEXT NOT NULL DEFAULT 'sqlite',
@@ -218,7 +219,7 @@ TABLES = {
     "fraude_eventos": """
         CREATE TABLE IF NOT EXISTS fraude_eventos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             ip TEXT NOT NULL,
             page TEXT NOT NULL DEFAULT '',
             created_epoch REAL NOT NULL DEFAULT 0,
@@ -228,7 +229,7 @@ TABLES = {
     "assinaturas": """
         CREATE TABLE IF NOT EXISTS assinaturas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             plano TEXT NOT NULL DEFAULT '',
             email TEXT NOT NULL DEFAULT '',
             stripe_ref TEXT NOT NULL DEFAULT '',
@@ -240,7 +241,7 @@ TABLES = {
     "email_sequencias": """
         CREATE TABLE IF NOT EXISTS email_sequencias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             nome TEXT NOT NULL,
             gatilho TEXT NOT NULL DEFAULT 'manual',
             assunto TEXT NOT NULL,
@@ -252,7 +253,7 @@ TABLES = {
     "email_envios": """
         CREATE TABLE IF NOT EXISTS email_envios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL DEFAULT '',
+            user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
             sequencia_id INTEGER NOT NULL DEFAULT 0,
             destino TEXT NOT NULL DEFAULT '',
             assunto TEXT NOT NULL DEFAULT '',
@@ -303,6 +304,15 @@ def _create_tables(conn) -> list[str]:
         add_column_if_missing(conn, "paginas", "dominio_id INTEGER", "dominio_id")
     except Exception as exc:  # noqa: BLE001
         erros.append(f"dominio_id/paginas: {exc}")
+    # Migracao multi-tenant (Fase 13): registros antigos sem user_id assumem o
+    # UUID de DEV para continuar visíveis no modo local.
+    for table in ALL_TABLES:
+        if not table.isidentifier():
+            continue  # nomes vêm do próprio esquema; evita SQL injection
+        try:
+            conn.execute(f"UPDATE {table} SET user_id = ? WHERE user_id = ?", (DEV_USER_ID, ""))
+        except sqlite3.Error:
+            pass
     for index in ("CREATE INDEX IF NOT EXISTS idx_vendas_gclid ON vendas (gclid)", "CREATE INDEX IF NOT EXISTS idx_visitas_gclid ON visitas (gclid)"):
         try:
             conn.execute(index)

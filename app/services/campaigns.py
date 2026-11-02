@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from .database import get_db, now_str, row_to_dict
+from .database import DEV_USER_ID, get_db, now_str, row_to_dict
 from .llm import LLMError
 
 SEED_DIR = Path(__file__).resolve().parent.parent.parent / "seed"
@@ -79,13 +79,15 @@ def construir(produto: dict, plataforma: str, form: dict) -> dict:
     }
 
 
-def salvar(campanha: dict) -> dict:
+def salvar(campanha: dict, user_id: str = "") -> dict:
+    user_id = user_id or campanha.get("user_id") or DEV_USER_ID
     timestamp = now_str()
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO campanhas (produto_id, plataforma, nome, objetivo, cpa_alvo, orcamento_diario, keywords_json, negativas_json, criativos_json, plano_json, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'rascunho', ?, ?)",
+            "INSERT INTO campanhas (user_id, produto_id, plataforma, nome, objetivo, cpa_alvo, orcamento_diario, keywords_json, negativas_json, criativos_json, plano_json, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'rascunho', ?, ?)",
             (
+                user_id,
                 campanha.get("produto_id"),
                 campanha["plataforma"],
                 campanha["nome"],
@@ -104,10 +106,16 @@ def salvar(campanha: dict) -> dict:
     return row_to_dict(row)
 
 
-def listar(produto_id: int | None = None) -> list[dict]:
+def listar(produto_id: int | None = None, user_id: str = "") -> list[dict]:
     query = "SELECT * FROM campanhas"
     params: tuple = ()
-    if produto_id:
+    if produto_id and user_id:
+        query += " WHERE produto_id = ? AND user_id = ?"
+        params = (produto_id, user_id)
+    elif user_id:
+        query += " WHERE user_id = ?"
+        params = (user_id,)
+    elif produto_id:
         query += " WHERE produto_id = ?"
         params = (produto_id,)
     query += " ORDER BY id DESC"
@@ -116,9 +124,11 @@ def listar(produto_id: int | None = None) -> list[dict]:
     return [row_to_dict(row) for row in rows]
 
 
-def get(campanha_id: int) -> dict:
+def get(campanha_id: int, user_id: str = "") -> dict:
+    escopo = " AND user_id = ?" if user_id else ""
+    params = (campanha_id, user_id) if user_id else (campanha_id,)
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM campanhas WHERE id = ?", (campanha_id,)).fetchone()
+        row = conn.execute(f"SELECT * FROM campanhas WHERE id = ?{escopo}", params).fetchone()
     if not row:
         raise LLMError("Campanha não encontrada.")
     record = row_to_dict(row)
@@ -131,18 +141,24 @@ def get(campanha_id: int) -> dict:
     return record
 
 
-def remover(campanha_id: int) -> None:
+def remover(campanha_id: int, user_id: str = "") -> None:
+    escopo = " AND user_id = ?" if user_id else ""
+    params = (campanha_id, user_id) if user_id else (campanha_id,)
     with get_db() as conn:
-        cursor = conn.execute("DELETE FROM campanhas WHERE id = ?", (campanha_id,))
+        cursor = conn.execute(f"DELETE FROM campanhas WHERE id = ?{escopo}", params)
         if cursor.rowcount == 0:
             raise LLMError("Campanha não encontrada.")
 
 
-def marcar_publicada(campanha_id: int, resultado: dict, status: str = "publicada", erro: str = "") -> dict:
+def marcar_publicada(campanha_id: int, resultado: dict, status: str = "publicada", erro: str = "", user_id: str = "") -> dict:
+    escopo = " AND user_id = ?" if user_id else ""
+    params = (status, json.dumps(resultado, ensure_ascii=False), erro[:2000], now_str(), campanha_id)
+    if user_id:
+        params = params + (user_id,)
     with get_db() as conn:
         conn.execute(
-            "UPDATE campanhas SET status = ?, resultado_json = ?, erro = ?, updated_at = ? WHERE id = ?",
-            (status, json.dumps(resultado, ensure_ascii=False), erro[:2000], now_str(), campanha_id),
+            f"UPDATE campanhas SET status = ?, resultado_json = ?, erro = ?, updated_at = ? WHERE id = ?{escopo}",
+            params,
         )
     if status == "publicada":
         from .notify import notify_event

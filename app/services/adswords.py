@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from .database import get_db, now_str, row_to_dict
+from .database import DEV_USER_ID, get_db, now_str, row_to_dict
 from .llm import LLMError, generate
 from .store import STORAGE
 
@@ -16,7 +16,7 @@ def _seed_negativas() -> list[str]:
     return ["gratis", "download", "torrent", "refund", "scams"]
 
 
-def gerar(produto: dict) -> dict:
+def gerar(produto: dict, user_id: str = "") -> dict:
     """Gera palavras-chave e negativas com IA (seed/prompts/keywords.md)."""
     template_path = SEED_DIR / "prompts" / "keywords.md"
     template = template_path.read_text(encoding="utf-8") if template_path.exists() else (
@@ -52,7 +52,7 @@ def gerar(produto: dict) -> dict:
         if not any(n["texto"] == seed_word for n in negativas_ia):
             negativas_ia.append({"texto": seed_word, "correspondencia": "exata", "seed": True})
 
-    salvar(produto, positivas, negativas_ia, origem="ia")
+    salvar(produto, positivas, negativas_ia, origem="ia", user_id=user_id)
     return {"positivas": positivas, "negativas": negativas_ia, "provider": result["provider"]}
 
 
@@ -64,35 +64,42 @@ def _clean_json(text: str) -> str:
     return match.group(0) if match else cleaned
 
 
-def salvar(produto: dict, positivas: list, negativas: list, origem: str = "manual") -> None:
+def salvar(produto: dict, positivas: list, negativas: list, origem: str = "manual", user_id: str = "") -> None:
+    user_id = user_id or DEV_USER_ID
     timestamp = now_str()
     with get_db() as conn:
         for item in positivas:
             exists = conn.execute(
-                "SELECT id FROM palavras WHERE produto_id = ? AND tipo = 'positiva' AND texto = ?",
-                (produto.get("id"), item["texto"]),
+                "SELECT id FROM palavras WHERE produto_id = ? AND tipo = 'positiva' AND texto = ? AND user_id = ?",
+                (produto.get("id"), item["texto"], user_id),
             ).fetchone()
             if not exists:
                 conn.execute(
-                    "INSERT INTO palavras (produto_id, produto_nome, tipo, texto, correspondencia, origem, created_at) VALUES (?, ?, 'positiva', ?, ?, ?, ?)",
-                    (produto.get("id"), produto.get("nome") or "", item["texto"], item.get("correspondencia", "frase"), origem, timestamp),
+                    "INSERT INTO palavras (user_id, produto_id, produto_nome, tipo, texto, correspondencia, origem, created_at) VALUES (?, ?, ?, 'positiva', ?, ?, ?, ?)",
+                    (user_id, produto.get("id"), produto.get("nome") or "", item["texto"], item.get("correspondencia", "frase"), origem, timestamp),
                 )
         for item in negativas:
             exists = conn.execute(
-                "SELECT id FROM palavras WHERE produto_id = ? AND tipo = 'negativa' AND texto = ?",
-                (produto.get("id"), item["texto"]),
+                "SELECT id FROM palavras WHERE produto_id = ? AND tipo = 'negativa' AND texto = ? AND user_id = ?",
+                (produto.get("id"), item["texto"], user_id),
             ).fetchone()
             if not exists:
                 conn.execute(
-                    "INSERT INTO palavras (produto_id, produto_nome, tipo, texto, correspondencia, origem, created_at) VALUES (?, ?, 'negativa', ?, ?, ?, ?)",
-                    (produto.get("id"), produto.get("nome") or "", item["texto"], "exata", origem, timestamp),
+                    "INSERT INTO palavras (user_id, produto_id, produto_nome, tipo, texto, correspondencia, origem, created_at) VALUES (?, ?, ?, 'negativa', ?, ?, ?, ?)",
+                    (user_id, produto.get("id"), produto.get("nome") or "", item["texto"], "exata", origem, timestamp),
                 )
 
 
-def listar(produto_id: int | None = None) -> dict:
+def listar(produto_id: int | None = None, user_id: str = "") -> dict:
     query = "SELECT * FROM palavras"
     params: tuple = ()
-    if produto_id:
+    if produto_id and user_id:
+        query += " WHERE produto_id = ? AND user_id = ?"
+        params = (produto_id, user_id)
+    elif user_id:
+        query += " WHERE user_id = ?"
+        params = (user_id,)
+    elif produto_id:
         query += " WHERE produto_id = ?"
         params = (produto_id,)
     query += " ORDER BY id DESC"
@@ -105,20 +112,23 @@ def listar(produto_id: int | None = None) -> dict:
     }
 
 
-def adicionar_manual(produto: dict, tipo: str, texto: str, correspondencia: str = "frase") -> dict:
+def adicionar_manual(produto: dict, tipo: str, texto: str, correspondencia: str = "frase", user_id: str = "") -> dict:
+    user_id = user_id or DEV_USER_ID
     timestamp = now_str()
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO palavras (produto_id, produto_nome, tipo, texto, correspondencia, origem, created_at) VALUES (?, ?, ?, ?, ?, 'manual', ?)",
-            (produto.get("id"), produto.get("nome") or "", tipo, texto.strip(), correspondencia, timestamp),
+            "INSERT INTO palavras (user_id, produto_id, produto_nome, tipo, texto, correspondencia, origem, created_at) VALUES (?, ?, ?, ?, ?, 'manual', ?)",
+            (user_id, produto.get("id"), produto.get("nome") or "", tipo, texto.strip(), correspondencia, timestamp),
         )
-        row = conn.execute("SELECT * FROM palavras WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        row = conn.execute("SELECT * FROM palavras WHERE id = ? AND user_id = ?", (cursor.lastrowid, user_id)).fetchone()
     return row_to_dict(row)
 
 
-def remover(palavra_id: int) -> None:
+def remover(palavra_id: int, user_id: str = "") -> None:
+    escopo = " AND user_id = ?" if user_id else ""
+    params = (palavra_id, user_id) if user_id else (palavra_id,)
     with get_db() as conn:
-        cursor = conn.execute("DELETE FROM palavras WHERE id = ?", (palavra_id,))
+        cursor = conn.execute(f"DELETE FROM palavras WHERE id = ?{escopo}", params)
         if cursor.rowcount == 0:
             raise LLMError("Palavra não encontrada.")
 

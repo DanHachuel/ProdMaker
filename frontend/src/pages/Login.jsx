@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useApp } from "../App";
+import { api } from "../api";
+import { supabase } from "../supabase";
 
 const STEPS = [
   { number: "1", icon: "inventory_2", title: "Adicione o produto", last: false },
@@ -16,24 +17,68 @@ const LANGUAGES = [
 ];
 
 export default function Login() {
-  const { login } = useApp();
   const navigate = useNavigate();
+  const [config, setConfig] = useState(null);
+  const [mode, setMode] = useState("signin"); // signin | signup
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
   const [showCode, setShowCode] = useState(false);
   const [language, setLanguage] = useState("pt");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // modo DEV (local): e-mail + código de ativação
+  const [devCode, setDevCode] = useState("");
 
-  const submit = async (event) => {
+  const loadConfig = useCallback(async () => {
+    try {
+      const cfg = await api.authConfig();
+      setConfig(cfg);
+      if (cfg.supabase_url && cfg.supabase_anon_key) {
+        supabase.configure(cfg.supabase_url, cfg.supabase_anon_key);
+      }
+    } catch {
+      setConfig({ mode: "dev" });
+    }
+  }, []);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
+
+  const cloud = config?.mode === "cloud";
+
+  const loginDev = async (event) => {
     event.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await login(email, code);
+      await api.login(email, devCode);
       navigate("/", { replace: true });
     } catch (err) {
       setError(err.message || "Não foi possível entrar. Verifique o e-mail e o código de ativação.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loginCloud = async (event) => {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const client = supabase.client();
+      if (!client) throw new Error("Supabase não configurado no servidor.");
+      const result =
+        mode === "signup"
+          ? await client.auth.signUp({ email, password })
+          : await client.auth.signInWithPassword({ email, password });
+      if (result.error) throw new Error(result.error.message);
+      const token = result.data?.session?.access_token;
+      if (!token) throw new Error(mode === "signup" ? "Conta criada — confirme o e-mail e faça login." : "Sessão não encontrada.");
+      localStorage.setItem("prodmaker_token", token);
+      navigate("/", { replace: true });
+    } catch (err) {
+      setError(err.message || "Falha na autenticação.");
     } finally {
       setLoading(false);
     }
@@ -101,64 +146,80 @@ export default function Login() {
 
         <div className="login-form">
           <h2>Bem-vindo de volta!</h2>
-          <p className="login-subtitle">Insira seu e-mail e código de ativação</p>
+          <p className="login-subtitle">
+            {cloud
+              ? mode === "signup"
+                ? "Crie sua conta com e-mail e senha"
+                : " Entre com seu e-mail e senha"
+              : "Insira seu e-mail e código de ativação"}
+          </p>
 
-          <form onSubmit={submit}>
-            {error && <div className="login-error">{error}</div>}
-            <div className="form-group">
-              <label htmlFor="email">E-mail:</label>
-              <div className="email-input-wrapper">
-                <span className="material-symbols-outlined email-icon">mail</span>
-                <input
-                  id="email"
-                  type="email"
-                  required
-                  placeholder="seu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
-                />
-              </div>
+          {cloud && (
+            <div className="tabs" style={{ marginBottom: "16px" }}>
+              <div className={`tab ${mode === "signin" ? "active" : ""}`} onClick={() => setMode("signin")}>Entrar</div>
+              <div className={`tab ${mode === "signup" ? "active" : ""}`} onClick={() => setMode("signup")}>Criar Conta</div>
             </div>
+          )}
 
-            <div className="form-group">
-              <label htmlFor="activationCode">Código de Ativação</label>
-              <div className="password-input-wrapper">
-                <span className="material-symbols-outlined lock-icon">lock</span>
-                <input
-                  id="activationCode"
-                  type={showCode ? "text" : "password"}
-                  required
-                  placeholder="********"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  className="password-toggle-btn"
-                  aria-label={showCode ? "Ocultar código" : "Mostrar código"}
-                  onClick={() => setShowCode((s) => !s)}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-                    <path d="M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-72q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29Zm0 192q-146 0-266-81.5T40-500q54-137 174-218.5T480-800q146 0 266 81.5T920-500q-54 137-174 218.5T480-200Z" />
-                  </svg>
-                </button>
+          {cloud ? (
+            <form onSubmit={loginCloud}>
+              {error && <div className="login-error">{error}</div>}
+              <div className="form-group">
+                <label htmlFor="email">E-mail:</label>
+                <div className="email-input-wrapper">
+                  <span className="material-symbols-outlined email-icon">mail</span>
+                  <input id="email" type="email" required placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+                </div>
               </div>
-            </div>
+              <div className="form-group">
+                <label htmlFor="password">Senha</label>
+                <div className="password-input-wrapper">
+                  <span className="material-symbols-outlined lock-icon">lock</span>
+                  <input id="password" type={showCode ? "text" : "password"} required placeholder="********" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+                  <button type="button" className="password-toggle-btn" aria-label={showCode ? "Ocultar senha" : "Mostrar senha"} onClick={() => setShowCode((s) => !s)}>
+                    <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                      <path d="M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-72q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29Zm0 192q-146 0-266-81.5T40-500q54-137 174-218.5T480-800q146 0 266 81.5T920-500q-54 137-174 218.5T480-200Z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <button className="login-button" type="submit" disabled={loading}>
+                <span>{loading ? "Entrando…" : mode === "signup" ? "Criar conta" : "Entrar"}</span>
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={loginDev}>
+              {error && <div className="login-error">{error}</div>}
+              <div className="form-group">
+                <label htmlFor="email">E-mail:</label>
+                <div className="email-input-wrapper">
+                  <span className="material-symbols-outlined email-icon">mail</span>
+                  <input id="email" type="email" required placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+                </div>
+              </div>
 
-            <button type="submit" className="login-button" disabled={loading}>
-              <span>{loading ? "Entrando…" : "Entrar"}</span>
-            </button>
-          </form>
+              <div className="form-group">
+                <label htmlFor="activationCode">Código de Ativação</label>
+                <div className="password-input-wrapper">
+                  <span className="material-symbols-outlined lock-icon">lock</span>
+                  <input id="activationCode" type={showCode ? "text" : "password"} required placeholder="********" value={devCode} onChange={(e) => setDevCode(e.target.value)} autoComplete="current-password" />
+                  <button type="button" className="password-toggle-btn" aria-label={showCode ? "Ocultar código" : "Mostrar código"} onClick={() => setShowCode((s) => !s)}>
+                    <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                      <path d="M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-72q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29Zm0 192q-146 0-266-81.5T40-500q54-137 174-218.5T480-800q146 0 266 81.5T920-500q-54 137-174 218.5T480-200Z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <button className="login-button" type="submit" disabled={loading}>
+                <span>{loading ? "Entrando…" : "Entrar"}</span>
+              </button>
+            </form>
+          )}
 
           <div className="support-link">
             <p>
-              <span>Esqueceu o código de ativação?</span>
-              <a href="/faq">Clique aqui</a>
-            </p>
-            <p>
-              <span>Problemas com a ativação? Use o chat de suporte abaixo</span>
+              <span>Modo: {cloud ? "nuvem (conta Supabase)" : "local (código mestre)"}</span>
             </p>
           </div>
         </div>

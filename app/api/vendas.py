@@ -1,9 +1,10 @@
 import json
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from ..deps import get_current_user
 from ..services import gads, vendas
 from ..services.database import get_db, now_str, row_to_dict
 from ..services.llm import LLMError
@@ -33,13 +34,13 @@ class CsvBody(BaseModel):
 
 
 @router.get("/vendas")
-def list_vendas():
-    return vendas.list_vendas()
+def list_vendas(user=Depends(get_current_user)):
+    return vendas.list_vendas(user["user_id"])
 
 
 @router.get("/vendas/resumo")
-def resumo_vendas():
-    return vendas.resumo()
+def resumo_vendas(user=Depends(get_current_user)):
+    return vendas.resumo(user["user_id"])
 
 
 @router.post("/vendas")

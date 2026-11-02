@@ -18,3 +18,5 @@ py3-pinterest
 # PostgreSQL/Supabase — SÓ usado quando DATABASE_URL estiver definida (import preguiçoso).
 # Sem DATABASE_URL o sistema continua 100% SQLite local.
 psycopg[binary]
+# Supabase Auth (Fase 13) — validação de token JWT quando em modo cloud.
+supabase

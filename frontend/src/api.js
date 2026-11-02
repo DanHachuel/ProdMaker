@@ -1,7 +1,12 @@
+function authHeader() {
+  const token = localStorage.getItem("prodmaker_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request(path, options = {}) {
   const res = await fetch(path, {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: { "Content-Type": "application/json", ...authHeader(), ...(options.headers || {}) },
     ...options,
   });
   if (!res.ok) {
@@ -19,6 +24,7 @@ export const api = {
   health: () => request("/api/health"),
   version: () => request("/api/version"),
   session: () => request("/api/auth/session"),
+  authConfig: () => request("/api/auth/config"),
   login: (email, activation_code) =>
     request("/api/auth/login", { method: "POST", body: JSON.stringify({ email, activation_code }) }),
   logout: () => request("/api/auth/logout", { method: "POST" }),

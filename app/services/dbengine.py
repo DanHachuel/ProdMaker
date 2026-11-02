@@ -44,9 +44,12 @@ def engine_name() -> str:
     return "postgres" if is_postgres() else "sqlite"
 
 
+DEV_USER_ID = "00000000-0000-0000-0000-000000000000"
+
+
 def current_user_id() -> str:
-    """Placeholder multi-tenant: vazio enquanto não houver Supabase Auth."""
-    return (os.environ.get("PRODMAKER_USER_ID") or "").strip()
+    """Multi-tenant: user_id do usuário autenticado; DEV local = uuid padrão."""
+    return (os.environ.get("PRODMAKER_USER_ID") or "").strip() or DEV_USER_ID
 
 
 def new_user_id() -> str:

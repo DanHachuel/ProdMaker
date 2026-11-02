@@ -1,9 +1,10 @@
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ..deps import get_current_user
 from ..services.database import get_db, now_str, row_to_dict
 from ..services.llm import LLMError, generate
 from ..services.pdf import markdown_para_pdf
@@ -105,9 +106,9 @@ def create_infoproduto(body: InfoprodutoBody):
 
 
 @router.get("")
-def list_infoprodutos():
+def list_infoprodutos(user=Depends(get_current_user)):
     with get_db() as conn:
-        rows = conn.execute("SELECT * FROM infoprodutos ORDER BY id DESC").fetchall()
+        rows = conn.execute("SELECT * FROM infoprodutos WHERE user_id = ? ORDER BY id DESC", (user["user_id"],)).fetchall()
     return [row_to_dict(row) for row in rows]
 
 

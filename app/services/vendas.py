@@ -10,7 +10,7 @@ import io
 import json
 from decimal import Decimal, InvalidOperation
 
-from .database import get_db, now_str, row_to_dict
+from .database import DEV_USER_ID, get_db, now_str, row_to_dict
 from .llm import LLMError
 
 
@@ -188,14 +188,16 @@ def _match_gclid(gclid: str) -> str:
     return json.dumps(match, ensure_ascii=False)
 
 
-def registrar_venda(data: dict) -> dict:
+def registrar_venda(data: dict, user_id: str = "") -> dict:
+    user_id = user_id or DEV_USER_ID
     timestamp = now_str()
     gclid = data.get("gclid") or ""
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO vendas (fonte, produto_id, produto_nome, transacao_id, comprador_email, valor, comissao, gclid, utm_source, utm_medium, utm_campaign, status, conversao_status, gclid_match, raw, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?, ?, ?)",
+            "INSERT INTO vendas (user_id, fonte, produto_id, produto_nome, transacao_id, comprador_email, valor, comissao, gclid, utm_source, utm_medium, utm_campaign, status, conversao_status, gclid_match, raw, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente', ?, ?, ?)",
             (
+                user_id,
                 data.get("fonte", "manual"),
                 data.get("produto_id"),
                 data.get("produto_nome", ""),
@@ -241,20 +243,26 @@ def registrar_venda(data: dict) -> dict:
     return record
 
 
-def list_vendas(limit: int = 300) -> list[dict]:
+def list_vendas(limit: int = 300, user_id: str = "") -> list[dict]:
     with get_db() as conn:
-        rows = conn.execute("SELECT * FROM vendas ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        if user_id:
+            rows = conn.execute("SELECT * FROM vendas WHERE user_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM vendas ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     return [row_to_dict(row) for row in rows]
 
 
-def resumo() -> dict:
+def resumo(user_id: str = "") -> dict:
+    escopo = "WHERE user_id = ?" if user_id else ""
+    parametros = (user_id,) if user_id else ()
+    padrao = parametros or (DEV_USER_ID,)
     with get_db() as conn:
-        aprovadas = conn.execute("SELECT COUNT(*) AS n, COALESCE(SUM(valor),0) AS receita, COALESCE(SUM(comissao),0) AS comissao FROM vendas WHERE status = 'aprovada'").fetchone()
-        por_status = {row["status"]: row["n"] for row in conn.execute("SELECT status, COUNT(*) AS n FROM vendas GROUP BY status")}
-        por_fonte = [{"fonte": row["fonte"], "n": row["n"]} for row in conn.execute("SELECT fonte, COUNT(*) AS n FROM vendas GROUP BY fonte ORDER BY n DESC")]
-        por_dia = [{"dia": row["dia"], "receita": row["receita"], "vendas": row["n"]} for row in conn.execute("SELECT substr(created_at,1,10) AS dia, COUNT(*) AS n, COALESCE(SUM(valor),0) AS receita FROM vendas WHERE status = 'aprovada' GROUP BY dia ORDER BY dia")]
-        por_produto = [{"produto": row["produto_nome"] or "(sem nome)", "n": row["n"], "receita": row["receita"]} for row in conn.execute("SELECT produto_nome, COUNT(*) AS n, COALESCE(SUM(valor),0) AS receita FROM vendas WHERE status = 'aprovada' GROUP BY produto_nome ORDER BY receita DESC")]
-        conv = {row["conversao_status"]: row["n"] for row in conn.execute("SELECT conversao_status, COUNT(*) AS n FROM vendas GROUP BY conversao_status")}
+        aprovadas = conn.execute(f"SELECT COUNT(*) AS n, COALESCE(SUM(valor),0) AS receita, COALESCE(SUM(comissao),0) AS comissao FROM vendas WHERE status = 'aprovada' AND user_id = ?", padrao).fetchone()
+        por_status = {row["status"]: row["n"] for row in conn.execute(f"SELECT status, COUNT(*) AS n FROM vendas {escopo} GROUP BY status", parametros)}
+        por_fonte = [{"fonte": row["fonte"], "n": row["n"]} for row in conn.execute(f"SELECT fonte, COUNT(*) AS n FROM vendas {escopo} GROUP BY fonte ORDER BY n DESC", parametros)]
+        por_dia = [{"dia": row["dia"], "receita": row["receita"], "vendas": row["n"]} for row in conn.execute(f"SELECT substr(created_at,1,10) AS dia, COUNT(*) AS n, COALESCE(SUM(valor),0) AS receita FROM vendas WHERE status = 'aprovada' AND user_id = ? GROUP BY dia ORDER BY dia", padrao)]
+        por_produto = [{"produto": row["produto_nome"] or "(sem nome)", "n": row["n"], "receita": row["receita"]} for row in conn.execute(f"SELECT produto_nome, COUNT(*) AS n, COALESCE(SUM(valor),0) AS receita FROM vendas WHERE status = 'aprovada' AND user_id = ? GROUP BY produto_nome ORDER BY receita DESC", padrao)]
+        conv = {row["conversao_status"]: row["n"] for row in conn.execute(f"SELECT conversao_status, COUNT(*) AS n FROM vendas {escopo} GROUP BY conversao_status", parametros)}
         conversoes = {
             "pendentes": conv.get("pendente", 0),
             "enviadas": conv.get("enviada", 0),

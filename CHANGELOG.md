@@ -3,6 +3,31 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.21 — 2026-11-04
+
+- **Fase 13 — Autenticação Multi-tenant com Supabase Auth.**
+- Backend: dependência `supabase` (import preguiçoso — o servidor sobe sem ela);
+  `services/auth_supabase.py` com validação do JWT via SDK (`auth.get_user`, cache de
+  5 min por token); `deps.py` com `get_current_user` lendo `Authorization: Bearer`;
+  `GET /api/auth/config` expõe modo cloud/dev + chaves públicas para o frontend;
+  `GET /api/auth/session` aceita token Supabase (prioridade) ou cookie local.
+- **Fallback DEV:** sem `SUPABASE_URL`/`SUPABASE_ANON_KEY` (ou com `DEV_MODE=true`)
+  o login local por código mestre (1234/admin) continua funcionando com o user_id
+  padrão `00000000-0000-0000-0000-000000000000`.
+- Banco: default `user_id` agora é o UUID de DEV em todas as tabelas (novas instalações)
+  e migração automática atualiza registros antigos (`''` → UUID de DEV) — dados
+  existentes continuam visíveis no modo local.
+- CRUD multi-tenant: produtos, páginas, vendas (lista/resumo/criação), campanhas,
+  palavras (AdsWords), domínios, pins, infoprodutos e investimentos filtram por
+  `user_id` na listagem, carimbam na criação e validam posse em update/delete.
+- Frontend: login com abas **Criar Conta / Entrar** via `@supabase/supabase-js`
+  (e-mail + senha), token JWT salvo em `localStorage` e enviado no header
+  `Authorization` de todas as requisições; Sair limpa o token e chama `signOut`;
+  guard de rota existente redireciona para /login sem sessão.
+- dependência frontend: @supabase/supabase-js.
+- Webhooks de venda (públicos, sem usuário autenticado) permanecem registrando com
+  o UUID de DEV — atribuição por página/usuário fica como refinamento da próxima etapa.
+
 ## 0.1.20 — 2026-11-03
 
 - **HOTFIX 3 — install inteligente (verificação real de dependências).**

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..deps import get_current_user
 from ..services import pinterest
 from ..services.database import get_db, row_to_dict
 from ..services.llm import LLMError
@@ -36,15 +37,15 @@ class ExportBody(BaseModel):
 
 
 @router.get("")
-def listar(produto_id: int | None = None):
-    return pinterest.listar(produto_id)
+def listar(produto_id: int | None = None, user=Depends(get_current_user)):
+    return pinterest.listar(produto_id, user["user_id"])
 
 
 @router.post("/gerar")
-def gerar(body: GerarBody):
-    produto = _produto_or_none(body.produto_id)
+def gerar(body: GerarBody, user=Depends(get_current_user)):
+    produto = _produto_or_none(body.produto_id, user["user_id"])
     try:
-        return pinterest.gerar_ideias(produto, body.board, body.link, body.quantidade)
+        return pinterest.gerar_ideias(produto, body.board, body.link, body.quantidade, user["user_id"])
     except LLMError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
