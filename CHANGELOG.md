@@ -3,6 +3,20 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.20 — 2026-11-03
+
+- **HOTFIX 3 — install inteligente (verificação real de dependências).**
+- Antes de chamar o pip, o launcher executa `pip list --format=freeze` no venv, compara com o
+  `requirements.txt` e, se tudo estiver instalado nas versões corretas (ou superiores),
+  **não roda pip install**: imprime apenas `[✓] Dependências já instaladas e atualizadas.
+  Ignorando pip install.`
+- Se algo faltar (versão ausente/desatualizada), instala **apenas os pacotes em falta** e em
+  modo silencioso (`-q --no-input --disable-pip-version-check`), com retry após atualizar
+  o pip em caso de falha.
+- Cache `storage/venv_state.json` (sha256 do requirements.txt + contagem de pacotes no venv):
+  quando nada mudou, a verificação é feita por leitura de diretório (milissegundos). Cache
+  invalida automaticamente quando o requirements.txt muda ou pacotes são removidos do venv.
+
 ## 0.1.19 — 2026-11-02
 
 - **HOTFIX 2 — launcher em modo SUPERVISOR (servidor encerrando sozinho).**

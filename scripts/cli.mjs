@@ -3,6 +3,7 @@
  * REGRA ZERO: este launcher NUNCA abre o navegador. Apenas imprime a URL.
  */
 import { spawn, spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -14,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.19";
+const APP_VERSION = "0.1.20";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -130,6 +131,167 @@ async function fetchMasterCode(python, home) {
   return (process.env.PRODMAKER_MASTER_CODE || "").trim() || "1234";
 }
 
+// ---------------------------------------------------------------------------
+// Verificação inteligente de dependências
+// ---------------------------------------------------------------------------
+
+function normalizeName(name) {
+  return name.toLowerCase().replace(/[_.]+/g, "-");
+}
+
+function parseRequirements() {
+  if (!fs.existsSync(REQUIREMENTS)) return [];
+  const text = fs.readFileSync(REQUIREMENTS, "utf8");
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .map((line) => {
+      const match = line.match(/^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(\[[^\]]*\])?\s*((==|>=|<=|!=|>|<|~=)\s*([0-9][0-9A-Za-z.\-+]*))?\s*$/);
+      if (!match) return null;
+      return {
+        name: normalizeName(match[1]),
+        raw: line,
+        comparator: match[3] === "~=" ? ">=" : match[3] || null,
+        version: match[5] || null,
+      };
+    })
+    .filter(Boolean);
+}
+
+function pipFreeze(python) {
+  const result = spawnSync(python, ["-m", "pip", "list", "--format=freeze", "--disable-pip-version-check"], {
+    encoding: "utf8",
+  });
+  const installed = new Map();
+  for (const line of (result.stdout || "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("-")) continue;
+    const match = trimmed.match(/^(.+?)==(.+)$/);
+    if (match) installed.set(normalizeName(match[1].split("[")[0]), match[2]);
+  }
+  return installed;
+}
+
+function cmpVersions(a, b) {
+  const pa = String(a).split(/[.\-+]/).map((x) => parseInt(x, 10) || 0);
+  const pb = String(b).split(/[.\-+]/).map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+function satisfies(installed, comparator, version) {
+  const c = cmpVersions(installed, version);
+  switch (comparator) {
+    case "==": return c === 0;
+    case ">=": return c >= 0;
+    case "<=": return c <= 0;
+    case ">": return c > 0;
+    case "<": return c < 0;
+    case "!=": return c !== 0;
+    default: return true;
+  }
+}
+
+function venvSitePackages(venvDir) {
+  const direct = path.join(venvDir, "Lib", "site-packages");
+  if (fs.existsSync(direct)) return direct;
+  if (fs.existsSync(venvDir)) {
+    const libDir = path.join(venvDir, "lib");
+    if (fs.existsSync(libDir)) {
+      try {
+        const entry = fs.readdirSync(libDir, { withFileTypes: true }).find((d) => d.isDirectory() && d.name.startsWith("python"));
+        if (entry) {
+          const candidate = path.join(libDir, entry.name, "site-packages");
+          if (fs.existsSync(candidate)) return candidate;
+        }
+      } catch {}
+    }
+  }
+  return null;
+}
+
+function countDistInfo(venvDir) {
+  const site = venvSitePackages(venvDir);
+  if (!site) return -1;
+  try {
+    return fs.readdirSync(site).filter((entry) => entry.endsWith(".dist-info")).length;
+  } catch {
+    return -1;
+  }
+}
+
+function hashRequirements() {
+  if (!fs.existsSync(REQUIREMENTS)) return "none";
+  return crypto.createHash("sha256").update(fs.readFileSync(REQUIREMENTS)).digest("hex");
+}
+
+function readEnvState(home) {
+  try {
+    const statePath = storagePath(home, "venv_state.json");
+    return JSON.parse(fs.readFileSync(statePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeEnvState(home, reqHash, distCount) {
+  try {
+    const statePath = storagePath(home, "venv_state.json");
+    fs.writeFileSync(statePath, JSON.stringify({ reqHash, distCount, checkedAt: new Date().toISOString() }, null, 2), "utf8");
+  } catch {}
+}
+
+async function ensurePythonDeps(home, python) {
+  const reqs = parseRequirements();
+  if (reqs.length === 0) {
+    console.log("(requirements.txt ausente ou vazio — nada a instalar)");
+    return;
+  }
+  const reqHash = hashRequirements();
+  const distCount = countDistInfo(path.join(home, "venv"));
+  const state = readEnvState(home);
+
+  // Cache: requirements inalterado E número de pacotes no venv inalterado
+  if (state && state.reqHash === reqHash && state.distCount === distCount) {
+    console.log("[✓] Dependências já instaladas e atualizadas. Ignorando pip install.");
+    return;
+  }
+
+  const installed = pipFreeze(python);
+  const missing = reqs.filter((req) => {
+    const version = installed.get(req.name);
+    if (!version) return true;
+    return req.comparator ? !satisfies(version, req.comparator, req.version) : false;
+  });
+
+  if (missing.length === 0) {
+    writeEnvState(home, reqHash, distCount);
+    console.log("[✓] Dependências já instaladas e atualizadas. Ignorando pip install.");
+    return;
+  }
+
+  console.log(`Instalando apenas o que falta (${missing.length}): ${missing.map((m) => m.name).join(", ")}...`);
+  const targets = missing.map((m) => m.raw);
+  let code = await runCommand(python, ["-m", "pip", "install", ...targets, "-q", "--no-input", "--disable-pip-version-check"]);
+  if (code !== 0) {
+    console.log("Retentando após atualizar o pip...");
+    await runCommand(python, ["-m", "pip", "install", "--upgrade", "pip", "-q"]);
+    code = await runCommand(python, ["-m", "pip", "install", ...targets, "-q", "--no-input", "--disable-pip-version-check"]);
+  }
+  if (code !== 0) {
+    console.error("Falha ao instalar dependências Python.");
+    process.exit(1);
+  }
+  writeEnvState(home, reqHash, countDistInfo(path.join(home, "venv")));
+  console.log("[✓] Dependências instaladas.");
+}
+
 async function commandInstall(flags) {
   const home = resolveHome();
   console.log(`ProdMaker ${APP_VERSION} — install`);
@@ -155,14 +317,7 @@ async function commandInstall(flags) {
         process.exit(1);
       }
     }
-    const python = venvPython(home);
-    console.log("Instalando dependências Python (requirements.txt)...");
-    await runCommand(python, ["-m", "pip", "install", "--upgrade", "pip"]);
-    const code2 = await runCommand(python, ["-m", "pip", "install", "-r", REQUIREMENTS]);
-    if (code2 !== 0) {
-      console.error("Falha ao instalar dependências Python.");
-      process.exit(1);
-    }
+    await ensurePythonDeps(home, venvPython(home));
   }
 
   console.log("");
