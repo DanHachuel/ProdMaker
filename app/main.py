@@ -1,10 +1,20 @@
+import asyncio
 import base64
 import hashlib
 import hmac
 import json
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
+
+# Telemetria/OpenTelemetry embutida do FastAPI desligada ANTES do import do FastAPI:
+# sem exporters configurados, a camada fastapi.telemetry._runtime não cria tarefas
+# de flush no ciclo de vida — uma das fontes do CancelledError no Ctrl+C.
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+os.environ.setdefault("OTEL_TRACES_EXPORTER", "none")
+os.environ.setdefault("OTEL_METRICS_EXPORTER", "none")
+os.environ.setdefault("OTEL_LOGS_EXPORTER", "none")
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse
@@ -22,7 +32,7 @@ from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, ge
 shutdown.instalar()
 configure_logging()
 
-APP_VERSION = "0.1.24"
+APP_VERSION = "0.1.25"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -30,7 +40,24 @@ MASTER_ALIAS = "admin"
 DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 LEGAL_DIR = Path(__file__).resolve().parent.parent / "legal"
 
-app = FastAPI(title="ProdMaker", version=APP_VERSION)
+@asynccontextmanager
+async def _prodmaker_lifespan(_app):
+    """Ciclo de vida tolerante a cancelamento: engole KeyboardInterrupt/CancelledError
+    durante o desligamento para que o CTRL+C seja 100% silencioso (sem traceback)."""
+    try:
+        yield
+    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+        pass
+
+
+app = FastAPI(
+    title="ProdMaker",
+    version=APP_VERSION,
+    lifespan=_prodmaker_lifespan,
+    # Telemetria nativa do FastAPI desligada (defesa extra ao OTEL_SDK_DISABLED):
+    # sem exporters OTLP/threads de flush interferindo no encerramento.
+    telemetry={"tracing": False, "metrics": False, "logs": False, "operation_spans": False},
+)
 
 from .api import infoprodutos as infoprodutos_router  # noqa: E402
 from .api import llm as llm_router  # noqa: E402
@@ -307,7 +334,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.24"}
+    return {"version": APP_VERSION, "canonical": "0.1.25"}
 
 
 @app.get("/api/settings")
@@ -436,19 +463,36 @@ def spa_fallback(full_path: str):
 #   .\venv\Scripts\python.exe app/main.py
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
-    import asyncio
-
+def _silent_shutdown_server(application) -> None:
+    """Sobe o uvicorn com desligamento 100% silencioso (CTRL+C sem traceback)."""
     import uvicorn
 
     from .services.logging_setup import uvicorn_log_config
 
+    class _SilentServer(uvicorn.Server):
+        # Desligamento 100% silencioso: depois de fechar conexões + lifespan, sai
+        # IMEDIATO (os._exit) — ANTES de o uvicorn reemitir o sinal capturado
+        # (KeyboardInterrupt) e de o asyncio desmontar tarefas pendentes (origem
+        # do traceback de CancelledError). O Ctrl+C nunca vaza traceback.
+        async def shutdown(self, sockets=None):
+            try:
+                await super().shutdown(sockets=sockets)
+            except BaseException:  # encerrar nunca pode vazar erro
+                pass
+            shutdown.encerrar(0)
+
     porta = int(os.environ.get("PRODMAKER_PORT") or 8188)
-    print(f"[ProdMaker] Iniciando em http://127.0.0.1:{porta} — mantenha esta janela aberta (CTRL+C para encerrar).")
-    print(f"[ProdMaker] Log persistente: {PRODMAKER_HOME / 'storage' / 'logs' / 'app.log'}")
+    config = uvicorn.Config(application, host="127.0.0.1", port=porta, log_config=uvicorn_log_config())
     try:
-        uvicorn.run(app, host="127.0.0.1", port=porta, log_config=uvicorn_log_config())
+        _SilentServer(config).run()
     except (KeyboardInterrupt, asyncio.CancelledError):
         shutdown.encerrar(0)
     except SystemExit:
         shutdown.encerrar(0)
+
+
+if __name__ == "__main__":
+    porta = int(os.environ.get("PRODMAKER_PORT") or 8188)
+    print(f"[ProdMaker] Iniciando em http://127.0.0.1:{porta} — mantenha esta janela aberta (CTRL+C para encerrar).")
+    print(f"[ProdMaker] Log persistente: {PRODMAKER_HOME / 'storage' / 'logs' / 'app.log'}")
+    _silent_shutdown_server(app)

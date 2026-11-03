@@ -3,6 +3,31 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.25 — 2026-11-03
+
+- **HOTFIX CRÍTICO — janela preta de CMD não abre mais no Windows.**
+- Causa raiz: `detached: true` no `spawn` do launcher faz o libuv criar o processo
+  filho com `DETACHED_PROCESS` no Windows — sem console herdado, o Windows
+  alocava um **novo console** para o Python (`python.exe` é app de console),
+  surgindo uma janela de CMD sem autorização do usuário (mais visível no
+  MobaXterm, que usa pty em vez de console Windows).
+- Correção: **`windowsHide: true`** (`CREATE_NO_WINDOW`) em todos os spawns do
+  launcher — spawn principal do servidor, `runCommand` (pip/venv), `taskkill` do
+  Ctrl+C e nos `spawnSync` de detecção de Python/código mestre/doctor.
+- `stdio: 'inherit'` preservado: os logs continuam saindo **no terminal atual**
+  (MobaXterm/CMD) — a flag só impede a criação da janela, não redireciona saída.
+- `package.json` revisado: nenhum script chama `.bat`/`.cmd` — `npm run debug`
+  chama o executável Python direto (`venv\Scripts\python.exe -m app.main`).
+- **Backend ainda mais à prova de Ctrl+C (defesa em profundidade):** `app/main.py`
+  passa a rodar um `uvicorn.Server` próprio (`_SilentServer`) cujo `shutdown()`
+  chama `os._exit(0)` **depois** de fechar conexões + lifespan — impedindo que o
+  uvicorn reemitir o sinal capturado (KeyboardInterrupt) e que o asyncio desmonte
+  tarefas pendentes (a origem real do `CancelledError`). Lifespan tolerante
+  (`_prodmaker_lifespan`) engole `KeyboardInterrupt`/`CancelledError` e a
+  telemetria OpenTelemetry é desligada explicitamente (env `OTEL_*` +
+  `telemetry={tracing,metrics,logs,operation_spans: False}`), removendo a camada
+  `fastapi.telemetry._runtime` do ciclo de encerramento.
+
 ## 0.1.24 — 2026-11-07
 
 - **HOTFIX DEFINITIVO — trava de shutdown (sem traceback no Ctrl+C).**

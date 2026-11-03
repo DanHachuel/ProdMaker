@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.24";
+const APP_VERSION = "0.1.25";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -64,6 +64,7 @@ function findSystemPython() {
       const result = spawnSync(candidate, process.platform === "win32" && candidate === "py" ? ["-3", "--version"] : ["--version"], {
         encoding: "utf8",
         shell: process.platform === "win32",
+        windowsHide: true,
       });
       if (result.status === 0) return candidate;
     } catch {}
@@ -110,7 +111,13 @@ async function pickPort(preferred) {
 }
 
 function runCommand(cmd, args, options = {}) {
-  const child = spawn(cmd, args, { stdio: "inherit", shell: process.platform === "win32", ...options });
+  const child = spawn(cmd, args, {
+    stdio: "inherit",
+    shell: process.platform === "win32",
+    // windowsHide: pip/venv nunca devem pular uma janela de CMD no Windows.
+    windowsHide: true,
+    ...options,
+  });
   return new Promise((resolve) => {
     child.on("close", (code) => resolve(code ?? 0));
   });
@@ -123,6 +130,7 @@ async function fetchMasterCode(python, home) {
         cwd: PKG_ROOT,
         encoding: "utf8",
         env: { ...process.env, PRODMAKER_HOME: home },
+        windowsHide: true,
       });
       const value = (result.stdout || "").trim().split(/\r?\n/).pop() || "";
       if (result.status === 0 && value) return value;
@@ -391,7 +399,7 @@ async function commandRun() {
     clearInterval(heartbeat);
     try {
       if (currentChild?.pid && process.platform === "win32") {
-        spawn("taskkill", ["/F", "/T", "/PID", String(currentChild.pid)], { stdio: "ignore", shell: false });
+        spawn("taskkill", ["/F", "/T", "/PID", String(currentChild.pid)], { stdio: "ignore", shell: false, windowsHide: true });
       } else if (currentChild?.pid) {
         currentChild.kill("SIGKILL");
       }
@@ -421,6 +429,13 @@ async function commandRun() {
         // fechamento do terminal (CTRL_CLOSE/SIGHUP) não o matam; o supervisor
         // continua responsável por reiniciar em caso de queda real.
         detached: true,
+        // windowsHide: no Windows, `detached` faz o libuv criar o processo filho
+        // com DETACHED_PROCESS — sem console herdado, o Windows alocava um NOVO
+        // console para o Python, ou seja, uma janela preta de CMD aparecia sem
+        // autorização do usuário (pior no MobaXterm, que usa pty e não console).
+        // CREATE_NO_WINDOW (windowsHide) impede essa janela; os logs continuam
+        // saindo no terminal atual porque stdio: 'inherit' mantém os handles.
+        windowsHide: true,
       });
 
       currentChild.on("error", (error) => {
@@ -467,7 +482,7 @@ async function commandDoctor() {
   const venv = venvPython(home);
   console.log(`Venv: ${venv || "ausente"}`);
   if (venv) {
-    const check = spawnSync(venv, ["-c", "import fastapi, uvicorn"], { encoding: "utf8" });
+    const check = spawnSync(venv, ["-c", "import fastapi, uvicorn"], { encoding: "utf8", windowsHide: true });
     console.log(`Dependências Python (fastapi/uvicorn): ${check.status === 0 ? "OK" : "FALTANDO (rode install)"}`);
   } else {
     const base = findSystemPython();
