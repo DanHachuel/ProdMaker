@@ -14,9 +14,12 @@ from pydantic import BaseModel
 from .deps import get_admin_user, get_current_user
 from .services.database import DEV_USER_ID, ensure_db, get_db, now_str, row_to_dict
 from .services.llm import LLMError, analyze_product, list_providers
+from .services.logging_setup import configure as configure_logging
 from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_master_code, get_settings, save_settings
 
-APP_VERSION = "0.1.22"
+configure_logging()
+
+APP_VERSION = "0.1.23"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -301,7 +304,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.22"}
+    return {"version": APP_VERSION, "canonical": "0.1.23"}
 
 
 @app.get("/api/settings")
@@ -433,6 +436,9 @@ def spa_fallback(full_path: str):
 if __name__ == "__main__":
     import uvicorn
 
+    from .services.logging_setup import uvicorn_log_config
+
     porta = int(os.environ.get("PRODMAKER_PORT") or 8188)
     print(f"[ProdMaker] Iniciando em http://127.0.0.1:{porta} — mantenha esta janela aberta (CTRL+C para encerrar).")
-    uvicorn.run(app, host="127.0.0.1", port=porta)
+    print(f"[ProdMaker] Log persistente: {PRODMAKER_HOME / 'storage' / 'logs' / 'app.log'}")
+    uvicorn.run(app, host="127.0.0.1", port=porta, log_config=uvicorn_log_config())

@@ -1,6 +1,6 @@
 {
   "name": "@danhachuel/prodmaker",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "ProdMaker — SaaS local para criação de infoprodutos, landing pages, campanhas e tracking (base AdsX).",
   "license": "MIT",
   "type": "module",
@@ -26,7 +26,8 @@
   "scripts": {
     "start": "node scripts/cli.mjs",
     "install-app": "node scripts/cli.mjs install",
-    "doctor": "node scripts/cli.mjs doctor"
+    "doctor": "node scripts/cli.mjs doctor",
+    "debug": "venv\\Scripts\\python.exe -m app.main"
   },
   "repository": {
     "type": "git",

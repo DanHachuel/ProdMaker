@@ -3,6 +3,23 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.23 — 2026-11-06
+
+- **HOTFIX — servidor encerrando silenciosamente no Windows + log persistente.**
+- **Log persistente:** `services/logging_setup.py` — Uvicorn passa a gravar em
+  `storage/logs/app.log` (além do terminal) e exceções não tratadas
+  (`sys.excepthook`) são registradas no arquivo; o launcher informa o caminho.
+- **Launcher:** spawn agora usa `python -m app.main` (entry point próprio com
+  log_config); processo **detached** (grupo próprio — imune a sinais de fechamento
+  do terminal); **SIGHUP ignorado** (terminal que fecha/detacha não derruba mais o
+  supervisor); nenhuma morte proativa por health check (heartbeat é apenas
+  informativo); auto-restart real (até 3 tentativas com backoff de 2s) mantido e
+  testado.
+- **`npm run debug`:** novo script que sobe o Python diretamente
+  (`.\venv\Scripts\python.exe -m app.main`), sem o wrapper Node — traceback fatal
+  aparece na tela.
+- Manual/README: comando manual agora é `python -m app.main`.
+
 ## 0.1.22 — 2026-11-05
 
 - **HOTFIX — RBAC (roles) + Painel Super Admin.**

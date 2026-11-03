@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.22";
+const APP_VERSION = "0.1.23";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -356,12 +356,14 @@ async function commandRun() {
   }
   if (port !== preferred) console.log(`Porta ${preferred} ocupada — usando ${port}.`);
 
+  // Spawn via `python -m app.main` (próprio entry point): permite log persistente
+  // em storage/logs/app.log e captura de exceções fatais.
   const pythonArgs =
     venvPython(home)
-      ? ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)]
+      ? ["-m", "app.main"]
       : process.platform === "win32" && python === "py"
-        ? ["-3", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)]
-        : ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)];
+        ? ["-3", "-m", "app.main"]
+        : ["-m", "app.main"];
 
   console.log("Iniciando ProdMaker...");
   const masterCode = await fetchMasterCode(python, home);
@@ -388,7 +390,9 @@ async function commandRun() {
   };
   process.on("SIGINT", stopAll);
   process.on("SIGTERM", stopAll);
-  process.on("SIGHUP", stopAll);
+  // SIGHUP (terminal que fecha/detacha no Windows/MobaXterm): NÃO matar o servidor —
+  // ignorar o sinal e seguir supervisionando.
+  process.on("SIGHUP", () => {});
 
   const heartbeat = setInterval(() => {
     console.log(`[ProdMaker] servidor ativo em http://localhost:${port} — ${new Date().toLocaleTimeString()}`);
@@ -401,7 +405,11 @@ async function commandRun() {
         cwd: PKG_ROOT,
         stdio: "inherit",
         env,
-        shell: process.platform === "win32",
+        shell: false,
+        // detached: o servidor fica em grupo de processos próprio — sinais de
+        // fechamento do terminal (CTRL_CLOSE/SIGHUP) não o matam; o supervisor
+        // continua responsável por reiniciar em caso de queda real.
+        detached: true,
       });
 
       currentChild.on("error", (error) => {
@@ -431,7 +439,7 @@ async function commandRun() {
   if (resultado.code !== 0) {
     console.error("");
     console.error("O servidor não se manteve no ar. Para ver o traceback completo, rode manualmente (dentro da pasta do ProdMaker):");
-    console.error(`  cd ${home} && .\\venv\\Scripts\\python.exe -m app.main`);
+    console.error(`  cd ${PKG_ROOT} && .\\venv\\Scripts\\python.exe -m app.main  (ou: npm run debug)`);
     console.error(`  (ou .\\venv\\Scripts\\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port ${port})`);
     process.exit(resultado.code ?? 1);
   }
