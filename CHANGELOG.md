@@ -3,6 +3,20 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.24 — 2026-11-07
+
+- **HOTFIX DEFINITIVO — trava de shutdown (sem traceback no Ctrl+C).**
+- Novo `app/core/shutdown.py` (instalado no import do `app/main.py`): `sys.excepthook`
+  e `threading.excepthook` globais tratam `KeyboardInterrupt` e
+  `asyncio.CancelledError` como encerramento imediato (`os._exit(0)`) — sem traceback,
+  mesmo que rotas/módulos futuros alterem o comportamento; telemetria do FastAPI
+  desligada por variável de ambiente.
+- `uvicorn.run()` protegido pelo mesmo `try/except` (encerramento silencioso com
+  código 0).
+- Launcher: Ctrl+C/SIGTERM agora **mata o processo Python à força**
+  (`taskkill /F /T /PID` no Windows, `SIGKILL` em Unix) e retorna ao prompt
+  instantaneamente, sem dar tempo de impressão de traceback.
+
 ## 0.1.23 — 2026-11-06
 
 - **HOTFIX — servidor encerrando silenciosamente no Windows + log persistente.**

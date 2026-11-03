@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.23";
+const APP_VERSION = "0.1.24";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -383,13 +383,24 @@ async function commandRun() {
   let stopping = false;
   let lastStart = Date.now();
 
-  const stopAll = () => {
+  // PARADA FORÇADA (trava de Ctrl+C): mata o processo Python sem dar tempo dele
+  // de imprimir traceback (KeyboardInterrupt/CancelledError) — o terminal volta
+  // ao prompt instantaneamente.
+  const matarAgora = (code) => {
     stopping = true;
-    if (currentChild) currentChild.kill();
-    process.exit(0);
+    clearInterval(heartbeat);
+    try {
+      if (currentChild?.pid && process.platform === "win32") {
+        spawn("taskkill", ["/F", "/T", "/PID", String(currentChild.pid)], { stdio: "ignore", shell: false });
+      } else if (currentChild?.pid) {
+        currentChild.kill("SIGKILL");
+      }
+    } catch {}
+    process.exit(code ?? 0);
   };
-  process.on("SIGINT", stopAll);
-  process.on("SIGTERM", stopAll);
+
+  process.on("SIGINT", () => matarAgora(0));
+  process.on("SIGTERM", () => matarAgora(0));
   // SIGHUP (terminal que fecha/detacha no Windows/MobaXterm): NÃO matar o servidor —
   // ignorar o sinal e seguir supervisionando.
   process.on("SIGHUP", () => {});
