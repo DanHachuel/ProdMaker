@@ -6,19 +6,20 @@ Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois
 ## 0.1.26 — 2026-11-03
 
 - **HOTFIX CRÍTICO — janela NATIVA do `cmd.exe` não abre mais no Windows (MobaXterm).**
-- Causa raiz (print do usuário): a janela continuava abrindo **mesmo com
-  `windowsHide: true` + `stdio: 'inherit'`** porque `detached: true` no `spawn` do
-  launcher cria o processo Python com `DETACHED_PROCESS` — ele **não herda** o
-  console do terminal, e o Windows então **aloca um novo console** para o
-  `python.exe` (aplicativo de console). `CREATE_NO_WINDOW` não suprime esse console
-  novo quando há `detached` (mais visível no MobaXterm, que usa pty, não console Windows).
-- Correção: **removido `detached: true`** do spawn do servidor em `scripts/cli.mjs`.
-  Sem `detached`, o Python **compartilha o console atual** (MobaXterm/CMD) — uma única
-  janela, com os logs do Uvicorn rolando nela. `windowsHide: true` + `stdio: 'inherit'`
-  preservados; `shell: false` mantido.
-- Ciclo de vida amarrado (desejado): sem `detached`, se o Node morrer o Python morre
-  junto. O **supervisor** (`child.on('close')` → auto-restart até 3 tentativas, backoff
-  2s) continua intacto para quedas/reinícios do próprio Python.
+- Causa raiz (dois fatores): (1) `detached: true` no `spawn` cria o Python com
+  `DETACHED_PROCESS` — ele não herda o console, e o Windows **aloca um novo console**
+  (a janela preta). (2) `stdio: 'inherit'` no Windows força o filho a usar um console
+  **físico** herdado, que o **MobaXterm não consegue herdar** corretamente (usa pty).
+- Correção (refatoração do spawn do servidor em `scripts/cli.mjs`):
+  - **removido `detached: true`** — o Python fica como **filho direto** do Node (se o
+    MobaXterm fechar, o servidor cai junto — comportamento normal de filho de terminal);
+  - **`stdio: ['inherit', 'pipe', 'pipe']`** — o Python não herda console de saída, então
+    o Windows **não aloca janela de CMD**; `stdin` segue `inherit` (teclado preservado);
+  - **Node virou proxy dos logs**: `child.stdout`/`child.stderr` são repassados a
+    `process.stdout`/`process.stderr` — os logs do Uvicorn aparecem **só no MobaXterm**.
+    Durante o `stopping` os chunks são drenados mas **não** repassados (Ctrl+C silencioso);
+  - `windowsHide: true` + `shell: false` preservados; **supervisor** (`on('close')` →
+    auto-restart até 3x) e o `taskkill /F /T /PID` no SIGINT mantidos.
 - Ctrl+C permanece 100% silencioso (trava `app/core/shutdown.py` + `os._exit` no
   `_SilentServer`), sem traceback de `KeyboardInterrupt`/`CancelledError`.
 

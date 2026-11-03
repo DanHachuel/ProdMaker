@@ -380,7 +380,9 @@ async function commandRun() {
   console.log("Se o servidor cair, o launcher tenta reiniciar sozinho (até 3 vezes).");
   console.log("");
 
-  const env = { ...process.env, PRODMAKER_HOME: home, PRODMAKER_PORT: String(port) };
+  // PYTHONUNBUFFERED: com stdio em pipe o Python faria buffer de bloco em stdout,
+  // atrasando os logs no proxy/MobaXterm. unbuffered = logs em tempo real.
+  const env = { ...process.env, PRODMAKER_HOME: home, PRODMAKER_PORT: String(port), PYTHONUNBUFFERED: "1" };
 
   // SUPERVISOR: se o processo do servidor morrer (sinal do terminal, quirk de
   // MobaXterm/Cygwin, crash), o launcher reinicia — até 3 tentativas com
@@ -422,20 +424,23 @@ async function commandRun() {
       lastStart = Date.now();
       currentChild = spawn(python, pythonArgs, {
         cwd: PKG_ROOT,
-        stdio: "inherit",
+        stdio: ["inherit", "pipe", "pipe"],
         env,
         shell: false,
-        // SEM `detached` — é a causa da janela preta de CMD. Um filho criado com
-        // DETACHED_PROCESS não herda o console do terminal, então o Windows ALOCA
-        // um NOVO console para o python.exe (aplicativo de console), abrindo a
-        // janela indesejada (print do usuário; mais visível no MobaXterm, que usa
-        // pty em vez de console Windows). `windowsHide`/CREATE_NO_WINDOW não evita
-        // esse console novo quando há `detached`. SEM detached, o Python COMPARTILHA
-        // o console atual (MobaXterm/CMD): uma única janela, com os logs do Uvicorn
-        // rolando nela. Ciclo de vida amarrado (desejado): se o Node morrer, o Python
-        // morre junto; o supervisor (`close` → auto-restart até 3x) trata as quedas
-        // do próprio Python.
         windowsHide: true,
+      });
+
+      // Proxy de logs: o Python NÃO imprime mais direto no terminal (stdio em pipe).
+      // Sem handles de console de saída herdados, o Windows NÃO aloca a janela preta
+      // de CMD (causa raiz no MobaXterm, que não herda console corretamente com
+      // stdio:'inherit'). O Node repassa stdout/stderr do filho para o terminal atual.
+      // Durante o encerramento (stopping) os chunks continuam sendo DRENADOS, mas não
+      // são repassados — garante Ctrl+C 100% silencioso.
+      currentChild.stdout?.on("data", (chunk) => {
+        if (!stopping) process.stdout.write(chunk);
+      });
+      currentChild.stderr?.on("data", (chunk) => {
+        if (!stopping) process.stderr.write(chunk);
       });
 
       currentChild.on("error", (error) => {
