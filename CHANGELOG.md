@@ -3,6 +3,25 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.26 — 2026-11-03
+
+- **HOTFIX CRÍTICO — janela NATIVA do `cmd.exe` não abre mais no Windows (MobaXterm).**
+- Causa raiz (print do usuário): a janela continuava abrindo **mesmo com
+  `windowsHide: true` + `stdio: 'inherit'`** porque `detached: true` no `spawn` do
+  launcher cria o processo Python com `DETACHED_PROCESS` — ele **não herda** o
+  console do terminal, e o Windows então **aloca um novo console** para o
+  `python.exe` (aplicativo de console). `CREATE_NO_WINDOW` não suprime esse console
+  novo quando há `detached` (mais visível no MobaXterm, que usa pty, não console Windows).
+- Correção: **removido `detached: true`** do spawn do servidor em `scripts/cli.mjs`.
+  Sem `detached`, o Python **compartilha o console atual** (MobaXterm/CMD) — uma única
+  janela, com os logs do Uvicorn rolando nela. `windowsHide: true` + `stdio: 'inherit'`
+  preservados; `shell: false` mantido.
+- Ciclo de vida amarrado (desejado): sem `detached`, se o Node morrer o Python morre
+  junto. O **supervisor** (`child.on('close')` → auto-restart até 3 tentativas, backoff
+  2s) continua intacto para quedas/reinícios do próprio Python.
+- Ctrl+C permanece 100% silencioso (trava `app/core/shutdown.py` + `os._exit` no
+  `_SilentServer`), sem traceback de `KeyboardInterrupt`/`CancelledError`.
+
 ## 0.1.25 — 2026-11-03
 
 - **HOTFIX CRÍTICO — janela preta de CMD não abre mais no Windows.**

@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.25";
+const APP_VERSION = "0.1.26";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -425,16 +425,16 @@ async function commandRun() {
         stdio: "inherit",
         env,
         shell: false,
-        // detached: o servidor fica em grupo de processos próprio — sinais de
-        // fechamento do terminal (CTRL_CLOSE/SIGHUP) não o matam; o supervisor
-        // continua responsável por reiniciar em caso de queda real.
-        detached: true,
-        // windowsHide: no Windows, `detached` faz o libuv criar o processo filho
-        // com DETACHED_PROCESS — sem console herdado, o Windows alocava um NOVO
-        // console para o Python, ou seja, uma janela preta de CMD aparecia sem
-        // autorização do usuário (pior no MobaXterm, que usa pty e não console).
-        // CREATE_NO_WINDOW (windowsHide) impede essa janela; os logs continuam
-        // saindo no terminal atual porque stdio: 'inherit' mantém os handles.
+        // SEM `detached` — é a causa da janela preta de CMD. Um filho criado com
+        // DETACHED_PROCESS não herda o console do terminal, então o Windows ALOCA
+        // um NOVO console para o python.exe (aplicativo de console), abrindo a
+        // janela indesejada (print do usuário; mais visível no MobaXterm, que usa
+        // pty em vez de console Windows). `windowsHide`/CREATE_NO_WINDOW não evita
+        // esse console novo quando há `detached`. SEM detached, o Python COMPARTILHA
+        // o console atual (MobaXterm/CMD): uma única janela, com os logs do Uvicorn
+        // rolando nela. Ciclo de vida amarrado (desejado): se o Node morrer, o Python
+        // morre junto; o supervisor (`close` → auto-restart até 3x) trata as quedas
+        // do próprio Python.
         windowsHide: true,
       });
 
