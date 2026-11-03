@@ -11,12 +11,12 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .deps import get_current_user
+from .deps import get_admin_user, get_current_user
 from .services.database import DEV_USER_ID, ensure_db, get_db, now_str, row_to_dict
 from .services.llm import LLMError, analyze_product, list_providers
 from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, get_master_code, get_settings, save_settings
 
-APP_VERSION = "0.1.21"
+APP_VERSION = "0.1.22"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -160,12 +160,15 @@ def auth_session(request: Request):
             user = get_current_user(authorization)
         except HTTPException:
             return {"authenticated": False}
-        return {"authenticated": True, "email": user.get("email"), "user_id": user.get("user_id"), "mode": user.get("mode"), "license": get_license()}
+        return {"authenticated": True, "email": user.get("email"), "user_id": user.get("user_id"), "mode": user.get("mode"), "role": user.get("role"), "license": get_license()}
     token = request.cookies.get(COOKIE_NAME)
     data = read_token(token) if token else None
     if not data:
         return {"authenticated": False}
-    return {"authenticated": True, "email": data.get("email"), "user_id": DEV_USER_ID, "mode": "dev", "license": get_license()}
+    from .services import auth_supabase
+
+    role = auth_supabase.registrar_usuario(DEV_USER_ID, data.get("email", "dev@local"), "dev")
+    return {"authenticated": True, "email": data.get("email"), "user_id": DEV_USER_ID, "mode": "dev", "role": role, "license": get_license()}
 
 
 @app.get("/api/auth/config")
@@ -298,16 +301,18 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.21"}
+    return {"version": APP_VERSION, "canonical": "0.1.22"}
 
 
 @app.get("/api/settings")
-def read_settings():
-    return get_settings()
+def read_settings(user=Depends(get_current_user)):
+    from .services.store import filter_settings_for_role
+
+    return filter_settings_for_role(get_settings(), user.get("role", "user"))
 
 
 @app.put("/api/settings")
-def update_settings(data: dict):
+def update_settings(data: dict, user=Depends(get_admin_user)):
     return save_settings(data)
 
 

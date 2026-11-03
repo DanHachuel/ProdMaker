@@ -44,7 +44,7 @@ const MENU = [
 export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { version, logout } = useApp();
+  const { version, logout, role } = useApp();
   const [expanded, setExpanded] = useState(() => {
     const initial = new Set();
     for (const item of MENU) {
@@ -61,6 +61,12 @@ export default function Sidebar() {
       return next;
     });
 
+  // RBAC: itens de infraestrutura apenas para o Super Admin
+  const menuVisivel = MENU.filter((item) => {
+    if (role === "admin") return true;
+    return item.to !== "/api-keys" && item.to !== "/configuracoes/plano";
+  });
+
   const handleLogout = async () => {
     await supabase.signOut();
     await logout();
@@ -74,7 +80,7 @@ export default function Sidebar() {
       </div>
       <nav>
         <ul>
-          {MENU.map((item, index) => {
+          {menuVisivel.map((item, index) => {
             if (item === "divider" || item.divider) return <div key={`d${index}`} className="divider" />;
             if (item.children) {
               const hasActiveChild = item.children.some((c) => c.to === location.pathname);

@@ -3,6 +3,26 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.22 — 2026-11-05
+
+- **HOTFIX — RBAC (roles) + Painel Super Admin.**
+- Banco: nova tabela `usuarios` (user_id, email, role); role `'admin'`/`'user'`.
+- **Regra de Ouro:** o e-mail `dan.hachuel@gmail.com` é **sempre admin** em qualquer
+  autenticação; no **modo DEV** (código 1234) o usuário padrão é admin; demais
+  e-mails (Supabase) entram como `user` — com upsert automático a cada login.
+- Backend: `get_current_user` passa a retornar `role`; nova dependência
+  `get_admin_user` (403 se não for admin). `PUT /api/settings`, rotas do Stripe
+  (`/api/billing/assinatura|historico|checkout`), TikTok (`/api/tiktok/token`) e
+  OAuth Google (`/api/google/oauth/url`) são **admin-only**. `GET /api/settings`
+  filtra chaves de infraestrutura (Supabase, Stripe, GitHub, Cloudflare, Redis)
+  para não-admin. `/api/auth/session` devolve o role.
+- Frontend: role salvo no estado global; **Sidebar** esconde "Chaves de API" e
+  "Plano & Assinatura" para não-admin; guard de rota redireciona usuário comum
+  ao Painel (403 implícito); Chaves de API mostra só chaves de trabalho
+  (LLM/Meta/Google/TikTok/Pinterest/Telegram/Gamma) para user; novos cards
+  **Supabase** (SUPABASE_URL/ANON_KEY) e **Stripe** (SECRET_KEY/WEBHOOK_SECRET)
+  visíveis só para o Super Admin.
+
 ## 0.1.21 — 2026-11-04
 
 - **Fase 13 — Autenticação Multi-tenant com Supabase Auth.**

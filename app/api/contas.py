@@ -1,7 +1,8 @@
 """Contas do Google — OAuth 1 clique (URL de consentimento + callback)."""
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from ..deps import get_admin_user
 from ..services import oauth_google
 from ..services.llm import LLMError
 
@@ -9,7 +10,7 @@ router = APIRouter(prefix="/api/google", tags=["google-oauth"])
 
 
 @router.get("/oauth/url")
-def oauth_url(request: Request):
+def oauth_url(request: Request, user=Depends(get_admin_user)):
     """Monta a URL de consentimento do Google (abrir em popup/aba)."""
     try:
         return oauth_google.build_auth_url(request)

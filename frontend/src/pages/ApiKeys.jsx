@@ -8,17 +8,20 @@ const LLM_DEFAULTS = {
   gemini: { kind: "gemini", base_url: "", model: "gemini-2.5-flash" },
 };
 
+const ADMIN_ONLY_CARDS = ["github", "cloudflare", "supabase", "stripe", "redis"];
+
 const KEY_CARDS = [
   { id: "tracking", emoji: "🎯", name: "Pixel de Rastreamento", fields: [{ key: "pixel_url", label: "URL pública do /track (túnel ou domínio)", placeholder: "https://meu-tunel.exemplo.com/track" }] },
   { id: "gamma", emoji: "🎨", name: "Gamma AI", fields: [{ key: "api_key", label: "API Key", secret: true }, { key: "base_url", label: "Base URL", placeholder: "https://api.app.gamma" }] },
-  { id: "github", emoji: "🐙", name: "GitHub", fields: [{ key: "token", label: "Token (PAT)", secret: true }, { key: "repo", label: "Repositório de páginas (opcional)", placeholder: "usuario/prodmaker-pages" }] },
-  { id: "cloudflare", emoji: "☁️", name: "Cloudflare", fields: [{ key: "api_token", label: "API Token", secret: true }, { key: "account_id", label: "Account ID" }] },
+  { id: "github", emoji: "🐙", name: "GitHub", adminOnly: true, fields: [{ key: "token", label: "Token (PAT)", secret: true }, { key: "repo", label: "Repositório de páginas (opcional)", placeholder: "usuario/prodmaker-pages" }] },
+  { id: "cloudflare", emoji: "☁️", name: "Cloudflare", adminOnly: true, fields: [{ key: "api_token", label: "API Token", secret: true }, { key: "account_id", label: "Account ID" }] },
   { id: "telegram", emoji: "✈️", name: "Telegram", fields: [{ key: "bot_token", label: "Bot Token", secret: true }, { key: "chat_id", label: "Chat ID" }] },
   { id: "pinterest", emoji: "📌", name: "Pinterest", fields: [{ key: "email", label: "E-mail" }, { key: "password", label: "Senha", secret: true }, { key: "board", label: "Board padrão" }] },
   { id: "google-ads", emoji: "🎯", name: "Google Ads", fields: [{ key: "developer_token", label: "Developer Token", secret: true }, { key: "client_id", label: "OAuth Client ID" }, { key: "client_secret", label: "OAuth Client Secret", secret: true }, { key: "refresh_token", label: "Refresh Token", secret: true }, { key: "customer_id", label: "Customer ID (XXX-XXX-XXXX)" }, { key: "conversion_action", label: "Conversion Action (recurso)", placeholder: "customers/123/conversionActions/456" }, { key: "api_version", label: "Versão da API", placeholder: "v22" }] },
   { id: "meta", emoji: "👥", name: "Meta Ads", fields: [{ key: "app_id", label: "App ID" }, { key: "app_secret", label: "App Secret", secret: true }, { key: "access_token", label: "Access Token (sistema)", secret: true }, { key: "ad_account_id", label: "Ad Account ID (act_...)" }] },
   { id: "tiktok", emoji: "🎵", name: "TikTok Ads", fields: [{ key: "app_id", label: "App ID" }, { key: "app_secret", label: "App Secret", secret: true }, { key: "auth_code", label: "Auth Code (portal TikTok)", secret: true }, { key: "advertiser_id", label: "Advertiser ID" }] },
-  { id: "redis", emoji: "🔴", name: "Redis (anti-fraude)", fields: [{ key: "url", label: "REDIS_URL", placeholder: "redis://localhost:6379/0" }] },
+  { id: "supabase", emoji: "🟩", name: "Supabase", adminOnly: true, fields: [{ key: "url", label: "SUPABASE_URL", placeholder: "https://xxxx.supabase.co" }, { key: "anon_key", label: "SUPABASE_ANON_KEY", secret: true }] },
+  { id: "stripe", emoji: "💳", name: "Stripe", adminOnly: true, fields: [{ key: "secret_key", label: "STRIPE_SECRET_KEY", secret: true }, { key: "webhook_secret", label: "Webhook Secret", secret: true }] },
   { id: "canva", emoji: "🖼️", name: "Canva (MCP)", soon: true },
 ];
 
@@ -30,6 +33,7 @@ function maskKey(value) {
 
 export default function ApiKeys() {
   const { toast } = useToast();
+  const { role } = useApp();
   const [providers, setProviders] = useState([]);
   const [apiKeys, setApiKeys] = useState({});
   const [openCard, setOpenCard] = useState(null); // "nvidia" | "gemini" | {id from KEY_CARDS}
@@ -158,8 +162,14 @@ export default function ApiKeys() {
       </div>
 
       <h3 style={{ fontSize: "15px", margin: "28px 0 8px" }}>🔌 Demais integrações</h3>
+      {role !== "admin" && (
+        <p className="placeholder-note" style={{ marginBottom: "12px" }}>
+          🔒 Você vê apenas as chaves de trabalho (LLM, anúncios, notificações). Configurações de
+          infraestrutura (Supabase, Stripe, GitHub, Cloudflare, Redis) são exclusivas do Super Admin.
+        </p>
+      )}
       <div className="api-grid">
-        {KEY_CARDS.map((card) => (
+        {KEY_CARDS.filter((card) => role === "admin" || !card.adminOnly).map((card) => (
           <div
             className="api-card"
             key={card.id}
@@ -243,7 +253,7 @@ export default function ApiKeys() {
               <button className="btn-primary" onClick={() => saveKeyCard(openCard)} disabled={saving}>
                 {saving ? "Salvando…" : "Salvar"}
               </button>
-              {openCard?.id === "tiktok" && (
+              {openCard?.id === "tiktok" && role === "admin" && (
                 <button
                   className="btn-outline"
                   disabled={testing}

@@ -1,8 +1,9 @@
 """Billing — planos (seed), checkout Stripe, webhook público e status da assinatura."""
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from ..deps import get_admin_user
 from ..services import stripe_billing
 from ..services.llm import LLMError
 
@@ -20,17 +21,17 @@ def planos():
 
 
 @router.get("/assinatura")
-def assinatura():
+def assinatura(user=Depends(get_admin_user)):
     return stripe_billing.assinatura_atual()
 
 
 @router.get("/historico")
-def historico():
+def historico(user=Depends(get_admin_user)):
     return stripe_billing.historico()
 
 
 @router.post("/checkout")
-def checkout(body: CheckoutBody, request: Request):
+def checkout(body: CheckoutBody, request: Request, user=Depends(get_admin_user)):
     base = f"{request.url.scheme}://{request.headers.get('host', 'localhost:8188')}"
     try:
         return stripe_billing.criar_checkout(

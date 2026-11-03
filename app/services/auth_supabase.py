@@ -12,7 +12,43 @@ from .llm import LLMError
 from .store import get_settings
 
 DEV_USER_ID = "00000000-0000-0000-0000-000000000000"
+ADMIN_EMAIL = "dan.hachuel@gmail.com"
 _CACHE_TTL = 300  # segundos de cache por token validado
+
+
+def _db():
+    from .database import get_db
+
+    return get_db()
+
+
+def obter_role(user_id: str, email: str, mode: str = "dev") -> str:
+    """Regra de Ouro: e-mail do dono é sempre admin; modo DEV é admin; demais 'user'."""
+    if (email or "").strip().lower() == ADMIN_EMAIL:
+        return "admin"
+    if mode == "dev":
+        return "admin"
+    with _db() as conn:
+        row = conn.execute("SELECT role FROM usuarios WHERE user_id = ?", (user_id,)).fetchone()
+    if row and row["role"] == "admin":
+        return "admin"
+    return "user"
+
+
+def registrar_usuario(user_id: str, email: str, mode: str = "dev") -> str:
+    """Upsert do usuário; devolve a role vigente (promove o e-mail do dono sempre)."""
+    role = obter_role(user_id, email, mode)
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    with _db() as conn:
+        existente = conn.execute("SELECT id FROM usuarios WHERE user_id = ?", (user_id,)).fetchone()
+        if existente:
+            conn.execute("UPDATE usuarios SET email = ?, role = ? WHERE user_id = ?", (email or "", role, user_id))
+        else:
+            conn.execute(
+                "INSERT INTO usuarios (user_id, email, role, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, email or "", role, timestamp),
+            )
+    return role
 
 _client = None
 _cache: dict[str, tuple[float, dict]] = {}

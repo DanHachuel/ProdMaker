@@ -47,12 +47,15 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState("");
+  const [role, setRole] = useState("user");
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
   const refreshSession = useCallback(async () => {
     try {
-      setSession(await api.session());
+      const s = await api.session();
+      setSession(s);
+      if (s?.role) setRole(s.role);
     } catch {
       setSession({ authenticated: false });
     } finally {
@@ -87,7 +90,7 @@ export default function App() {
 
   if (onLogin) {
     return (
-      <AppCtx.Provider value={{ session, loading, version, login, logout, theme, toggleTheme }}>
+      <AppCtx.Provider value={{ session, loading, version, login, logout, theme, toggleTheme, role }}>
         <Login />
       </AppCtx.Provider>
     );
@@ -97,8 +100,14 @@ export default function App() {
 
   if (!authenticated) return <Navigate to="/login" replace />;
 
+  // Guard de rotas admin (RBAC): usuário comum é redirecionado ao Painel
+  const rotasAdmin = ["/api-keys", "/configuracoes/plano"];
+  if (rotasAdmin.includes(location.pathname) && role !== "admin") {
+    return <Navigate to="/" replace />;
+  }
+
   return (
-    <AppCtx.Provider value={{ session, loading, version, login, logout, theme, toggleTheme }}>
+    <AppCtx.Provider value={{ session, loading, version, login, logout, theme, toggleTheme, role }}>
       <ToastProvider>
         <div className="app-shell">
           <Sidebar />

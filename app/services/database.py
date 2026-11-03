@@ -262,6 +262,15 @@ TABLES = {
             created_at TEXT NOT NULL
         )
     """,
+    "usuarios": """
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL DEFAULT '',
+            role TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT NOT NULL
+        )
+    """,
 }
 
 ALL_TABLES = list(TABLES.keys())

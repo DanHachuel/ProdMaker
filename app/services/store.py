@@ -33,6 +33,20 @@ def get_master_code() -> str:
     return code or "1234"
 
 
+# Chaves de infraestrutura — visíveis apenas para o Super Admin (RBAC).
+ADMIN_ONLY_KEYS = ["supabase", "stripe", "github", "cloudflare", "redis"]
+
+
+def filter_settings_for_role(settings: dict, role: str) -> dict:
+    """Remove chaves de infraestrutura quando o usuário não é admin."""
+    if role == "admin":
+        return settings
+    api_keys = settings.get("api_keys")
+    if isinstance(api_keys, dict):
+        settings = {**settings, "api_keys": {k: v for k, v in api_keys.items() if k not in ADMIN_ONLY_KEYS}}
+    return settings
+
+
 def get_settings() -> dict:
     settings_path = STATE / "settings.json"
     if not settings_path.exists():
