@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.27";
+const APP_VERSION = "0.1.28";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -413,7 +413,6 @@ async function commandRun() {
   // ao prompt instantaneamente.
   const matarAgora = (code) => {
     stopping = true;
-    clearInterval(heartbeat);
     try {
       if (currentChild?.pid && process.platform === "win32") {
         spawn("taskkill", ["/F", "/T", "/PID", String(currentChild.pid)], { stdio: "ignore", shell: false, windowsHide: true });
@@ -430,9 +429,10 @@ async function commandRun() {
   // ignorar o sinal e seguir supervisionando.
   process.on("SIGHUP", () => {});
 
-  const heartbeat = setInterval(() => {
-    console.log(`[ProdMaker] servidor ativo em http://localhost:${port} — ${new Date().toLocaleTimeString()}`);
-  }, 60000);
+  // Sem heartbeat no terminal: após subir, o terminal fica ESTÁTICO (nenhuma
+  // mensagem periódica). O monitoramento de vida já existe — silencioso — em
+  // storage/logs/app.log (uvicorn registra cada requisição e o ciclo de vida
+  // do servidor) e o supervisor reinicia o processo em quedas reais.
 
   const startServer = () =>
     new Promise((resolve) => {
@@ -495,7 +495,6 @@ async function commandRun() {
   console.log("");
 
   const resultado = await encerramento;
-  clearInterval(heartbeat);
   if (resultado.code !== 0) {
     console.error("");
     console.error("O servidor não se manteve no ar. Para ver o traceback completo, rode manualmente (dentro da pasta do ProdMaker):");

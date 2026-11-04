@@ -3,6 +3,21 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.28 — 2026-11-03
+
+- **HOTFIX — terminal limpo: removido o heartbeat periódico.**
+- A mensagem `[ProdMaker] servidor ativo em http://localhost:8188 — HH:MM:SS`
+  era impressa a cada 60s pelo `setInterval` do launcher (`scripts/cli.mjs`),
+  poluindo visualmente o terminal. Removida por completo (intervalo e os dois
+  `clearInterval` associados).
+- O terminal fica **estático** após subir o servidor — nenhuma mensagem
+  periódica. O monitoramento de vida continua existindo, silencioso, em
+  `storage/logs/app.log` (uvicorn registra startup, cada requisição e o
+  encerramento) e pelo supervisor: se o processo cair de verdade, o launcher
+  ainda reinicia sozinho (até 3 vezes) e avisa no terminal.
+- Bump duplo 0.1.28 (`app/main.py` APP_VERSION + canonical, `package.json`,
+  `scripts/cli.mjs`).
+
 ## 0.1.27 — 2026-11-03
 
 - **HOTFIX CRÍTICO — "Failed to fetch"/ERR_CONNECTION_REFUSED na primeira abertura
