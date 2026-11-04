@@ -3,6 +3,33 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.30 — 2026-11-04
+
+- **HOTFIX — terminal 100% silencioso ao navegar + formatação + morte do filho
+  explícita.**
+- **Access log do uvicorn desligado no terminal** (`app/main.py`):
+  `uvicorn.Config(..., access_log=False)` — navegar pelas telas (CSS/JS/SPA/API)
+  não imprime mais nenhuma linha `INFO: 127.0.0.1... "GET /api/..." 200 OK`.
+  Ciclo de vida (startup/shutdown) e erros reais (500/traceback) continuam
+  saindo — só o ruído de acesso sai. O handler de arquivo do
+  `logging_setup.py` passa a escutar apenas os loggers da aplicação (`app.*`),
+  isolando o formatter (sem `KeyError: client_addr`). *(O `access_log=False` em
+  si entrou no `0.1.29`; aqui ficam as correções restantes do mesmo pedido.)*
+- **Formatação do launcher (`scripts/cli.mjs`)**: `Aguardando o servidor ficar
+  pronto` agora é impresso com `console.log` (`\n` garantido) — o banner do
+  Python (`[ProdMaker] Iniciando em...`, que chega pelo proxy de stdout) não
+  nasce mais colado na mensagem. Resultado: "Aguardando o servidor ficar
+  pronto..." → ciclo de vida do Python em linhas próprias → "Servidor pronto."
+  → caixa de URL.
+- **Morte do filho explícita**: `child.on("exit", (code, signal))` imprime
+  código **e** sinal do processo Python quando ele morre sozinho, com o caminho
+  de `storage/logs/app.log` — um retorno misterioso ao prompt do PowerShell
+  agora tem causa registrada no terminal (o supervisor continua reiniciando até
+  3 vezes em quedas reais).
+- Spawn do servidor confirmado: `windowsHide: true` + `stdio: ['inherit',
+  'pipe', 'pipe']` (sem janela de CMD, com proxy de logs pelo Node).
+- Bump: `0.1.30` (a `0.1.29` já estava publicada no registry).
+
 ## 0.1.29 — 2026-11-04
 
 - **HOTFIX — terminal 100% estável após subir (nada de spam ao navegar).**

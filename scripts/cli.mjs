@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.29";
+const APP_VERSION = "0.1.30";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -463,6 +463,17 @@ async function commandRun() {
         resolve({ code: 1 });
       });
 
+      // Saída EXPLÍCITA do filho (além do 'close'): código + sinal + caminho do
+      // log. Um retorno misterioso ao prompt do PowerShell fica com causa
+      // registrada em vez de silencioso.
+      currentChild.on("exit", (code, signal) => {
+        if (stopping) return;
+        console.error(
+          `[ProdMaker] Processo do servidor saiu (código ${code ?? "null"}, sinal ${signal ?? "null"}). ` +
+            `Detalhes: ${path.join(home, "storage", "logs", "app.log")}`
+        );
+      });
+
       currentChild.on("close", (code) => {
         if (stopping) {
           resolve({ code: code ?? 0 });
@@ -482,9 +493,12 @@ async function commandRun() {
 
   // Sobe o servidor primeiro; a caixa de URL só aparece quando ele está ouvindo.
   const encerramento = startServer();
-  process.stdout.write("Aguardando o servidor ficar pronto");
+  // console.log (não process.stdout.write): a mensagem PRECISA terminar com \n,
+  // senão o banner do Python ("[ProdMaker] Iniciando em...") — que chega pelo
+  // proxy de stdout — nasce colado nela ("...pronto[ProdMaker] Iniciando em...").
+  console.log("Aguardando o servidor ficar pronto...");
   const pronto = await waitReady(port);
-  process.stdout.write(pronto ? " OK\n" : " (tempo excedido)\n");
+  console.log(pronto ? "Servidor pronto." : "Servidor demorou para responder (30s).");
   printUrlBox(port, masterCode);
   if (pronto) {
     console.log("O servidor está rodando. Mantenha esta janela aberta. Pressione CTRL+C para encerrar.");
