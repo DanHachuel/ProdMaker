@@ -244,6 +244,13 @@ def registrar_venda(data: dict, user_id: str = "") -> dict:
 
 
 def list_vendas(limit: int = 300, user_id: str = "") -> list[dict]:
+    # Defesa: LIMIT exige inteiro no SQLite — um valor estranho (ex.: user_id
+    # passado por engano como posicional) voltaria ao padrão em vez de estourar
+    # "datatype mismatch" e devolver 500 na listagem de vendas.
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 300
     with get_db() as conn:
         if user_id:
             rows = conn.execute("SELECT * FROM vendas WHERE user_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()

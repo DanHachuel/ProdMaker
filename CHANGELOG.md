@@ -3,6 +3,40 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.27 — 2026-11-03
+
+- **HOTFIX CRÍTICO — "Failed to fetch"/ERR_CONNECTION_REFUSED na primeira abertura
+  + 500 em `GET /api/vendas`.**
+- **Launcher (`scripts/cli.mjs`): a URL só é impressa quando o servidor está
+  ouvindo.** Antes a caixa de URL era impressa antes do spawn — o boot do Python
+  (import do FastAPI + abertura do SQLite, 2-5s) fazia o navegador receber
+  conexão recusada, e a UI do React mostrava "Failed to fetch" (tela Seus
+  Produtos) ou `ERR_CONNECTION_REFUSED` ao abrir rota SPA (`/api-keys`) direto.
+  Agora: spawn → `waitReady()` (poll de `/api/health` a cada 250ms, timeout 30s)
+  → caixa de URL. Em timeout, alerta com dica de debug (`npm run debug`,
+  `storage/logs/app.log`).
+- **`GET /api/vendas` voltava 500 sempre:** `vendas.list_vendas(user["user_id"])`
+  passava o `user_id` no parâmetro **`limit`** (a assinatura é
+  `(limit=300, user_id="")`) e o SQLite estourava `datatype mismatch` no `LIMIT`.
+  Corrigido para chamada por nome (`user_id=...`) + defesa no serviço: `limit`
+  não-inteiro volta ao padrão em vez de quebrar.
+- **Roteamento SPA verificado (já estava correto):** `@app.get("/{full_path:path}")`
+  serve `index.html` para qualquer rota não-API (`/api-keys`, `/dashboard`,
+  `/produtos`, `/configuracoes/plano` — reload e acesso direto OK) e devolve 404
+  JSON para `/api/*` inexistentes. Rotas de API são declaradas antes do fallback.
+- **Interceptor do frontend verificado:** `api.js` já envia `credentials: "include"`
+  (cookie de sessão) e o Bearer do `localStorage` quando existe; o role vem de
+  `/api/auth/session` (`dan.hachuel@gmail.com` → `admin` em qualquer modo).
+- Varredura de 30 endpoints autenticados: só `/api/vendas` quebrava — os demais
+  (produtos, dashboard, settings, paginas, campanhas, investimentos, vendas/resumo,
+  billing, email, pins, etc.) respondem 200.
+- **`storage/logs/app.log` — ruído eliminado:** o formatador do access log do
+  console era um `logging.Formatter` puro com `%(client_addr)s`, mas o uvicorn
+  passa os dados em `record.args` — cada requisição gerava um
+  "--- Logging error --- KeyError: 'client_addr'" no terminal. Agora usa o
+  `uvicorn.logging.AccessFormatter` (extrai args → atributos). O arquivo
+  app.log continua íntegro (linhas de acesso corretas).
+
 ## 0.1.26 — 2026-11-03
 
 - **HOTFIX CRÍTICO — janela NATIVA do `cmd.exe` não abre mais no Windows (MobaXterm).**

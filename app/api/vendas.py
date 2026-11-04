@@ -35,7 +35,9 @@ class CsvBody(BaseModel):
 
 @router.get("/vendas")
 def list_vendas(user=Depends(get_current_user)):
-    return vendas.list_vendas(user["user_id"])
+    # user_id por nome: a assinatura do serviço é (limit, user_id) — posicional
+    # fazia o user_id cair no LIMIT (string) e estourar datatype mismatch (500).
+    return vendas.list_vendas(user_id=user["user_id"])
 
 
 @router.get("/vendas/resumo")

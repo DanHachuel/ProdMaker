@@ -78,7 +78,16 @@ def uvicorn_log_config() -> dict:
         "disable_existing_loggers": False,
         "formatters": {
             "default": {"format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s", "datefmt": "%Y-%m-%d %H:%M:%S"},
-            "access": {"format": '%(asctime)s [%(levelname)s] %(client_addr)s - "%(request_line)s" %(status_code)s'},
+            # O AccessFormatter do uvicorn é OBRIGATÓRIO aqui: o access log do
+            # uvicorn passa os dados em record.args (5-tupla), sem atributos
+            # client_addr/request_line/status_code. Um logging.Formatter puro
+            # estoura KeyError 'client_addr' a cada requisição (spam de
+            # "--- Logging error ---" no terminal). O AccessFormatter extrai
+            # args e injeta os atributos antes de formatar.
+            "access": {
+                "()": "uvicorn.logging.AccessFormatter",
+                "fmt": '%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
+            },
         },
         "handlers": {
             "default": {"class": "logging.StreamHandler", "formatter": "default", "stream": "ext://sys.stderr"},

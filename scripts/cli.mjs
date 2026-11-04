@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.26";
+const APP_VERSION = "0.1.27";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -108,6 +108,21 @@ async function pickPort(preferred) {
     if (await isPortFree(port)) return port;
   }
   return null;
+}
+
+// Espera o servidor realmente OUVIR antes de mostrar a URL: sem isso o usuário
+// abria http://localhost:8188 durante o boot do Python e via "Failed to fetch"
+// (ou ERR_CONNECTION_REFUSED em rota SPA como /api-keys).
+async function waitReady(port, timeoutMs = 30000) {
+  const inicio = Date.now();
+  while (Date.now() - inicio < timeoutMs) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1000) });
+      if (res.ok) return true;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
 }
 
 function runCommand(cmd, args, options = {}) {
@@ -375,10 +390,10 @@ async function commandRun() {
 
   console.log("Iniciando ProdMaker...");
   const masterCode = await fetchMasterCode(python, home);
-  printUrlBox(port, masterCode);
-  console.log("O servidor está rodando. Mantenha esta janela aberta. Pressione CTRL+C para encerrar.");
-  console.log("Se o servidor cair, o launcher tenta reiniciar sozinho (até 3 vezes).");
-  console.log("");
+  // A URL só é impressa DEPOIS de o servidor estar ouvindo (ver waitReady no
+  // spawn). Imprimir a caixa de URL antes causava "Failed to fetch" e
+  // ERR_CONNECTION_REFUSED no navegador durante o boot (2-5s de import do
+  // FastAPI + abertura do SQLite): o usuário abria o site e nada respondia.
 
   // PYTHONUNBUFFERED: com stdio em pipe o Python faria buffer de bloco em stdout,
   // atrasando os logs no proxy/MobaXterm. unbuffered = logs em tempo real.
@@ -465,7 +480,21 @@ async function commandRun() {
       });
     });
 
-  const resultado = await startServer();
+  // Sobe o servidor primeiro; a caixa de URL só aparece quando ele está ouvindo.
+  const encerramento = startServer();
+  process.stdout.write("Aguardando o servidor ficar pronto");
+  const pronto = await waitReady(port);
+  process.stdout.write(pronto ? " OK\n" : " (tempo excedido)\n");
+  printUrlBox(port, masterCode);
+  if (pronto) {
+    console.log("O servidor está rodando. Mantenha esta janela aberta. Pressione CTRL+C para encerrar.");
+  } else {
+    console.error("O servidor não respondeu em 30s. Ele pode estar reiniciando — rode 'npm run debug' para ver o traceback ou confira storage/logs/app.log.");
+  }
+  console.log("Se o servidor cair, o launcher tenta reiniciar sozinho (até 3 vezes).");
+  console.log("");
+
+  const resultado = await encerramento;
   clearInterval(heartbeat);
   if (resultado.code !== 0) {
     console.error("");
