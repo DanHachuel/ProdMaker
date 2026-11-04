@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { useApp } from "../App";
 import Modal from "../components/Modal";
 import { useToast } from "../components/Toast";
 
@@ -33,7 +34,7 @@ function maskKey(value) {
 
 export default function ApiKeys() {
   const { toast } = useToast();
-  const { role } = useApp();
+  const { role, logout } = useApp();
   const [providers, setProviders] = useState([]);
   const [apiKeys, setApiKeys] = useState({});
   const [openCard, setOpenCard] = useState(null); // "nvidia" | "gemini" | {id from KEY_CARDS}
@@ -41,14 +42,28 @@ export default function ApiKeys() {
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [falha, setFalha] = useState(null); // { status, message }
 
   const load = useCallback(async () => {
+    setLoading(true);
+    setFalha(null);
     try {
       const [providerList, settings] = await Promise.all([api.llmProviders(), api.settings()]);
-      setProviders(providerList);
-      setApiKeys(settings.api_keys || {});
+      setProviders(providerList || []);
+      setApiKeys(settings?.api_keys || {});
     } catch (err) {
-      toast(err.message || "Falha ao carregar configurações.");
+      // 401 = sessão expirada; 403 = RBAC barrou (não-admin) — em ambos os casos
+      // mostramos uma tela explicativa em vez de quebrar a renderização.
+      const status = err?.status;
+      if (status === 401 || status === 403) {
+        setFalha({ status, message: err.message || (status === 403 ? "Acesso restrito ao Super Admin." : "Sessão expirada.") });
+      } else {
+        setFalha({ status: status || 0, message: err?.message || "Falha ao carregar configurações." });
+      }
+      toast(err?.message || "Falha ao carregar configurações.");
+    } finally {
+      setLoading(false);
     }
   }, [toast]);
 
@@ -107,7 +122,7 @@ export default function ApiKeys() {
     setSaving(true);
     try {
       const settings = await api.settings();
-      settings.api_keys = { ...(settings.api_keys || {}), [card.id]: draft };
+      settings.api_keys = { ...(settings?.api_keys || {}), [card.id]: draft };
       await api.saveSettings(settings);
       toast(`Cartão ${card.name} salvo!`);
       setOpenCard(null);
@@ -141,6 +156,55 @@ export default function ApiKeys() {
     const data = apiKeys[id] || {};
     return fields.some((f) => (data[f.key] || "").trim());
   };
+
+  if (loading) {
+    return (
+      <section>
+        <h1>🔌 Chaves de API</h1>
+        <p className="subtitle">Carregando configurações…</p>
+        <div className="api-grid">
+          {[0, 1, 2, 3].map((i) => (
+            <div className="api-card" key={i} style={{ opacity: 0.4 }}>
+              <div className="api-logo">…</div>
+              <div className="api-status">carregando</div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (falha) {
+    const negado = falha.status === 401 || falha.status === 403;
+    return (
+      <section>
+        <h1>🔌 Chaves de API</h1>
+        <p className="subtitle">
+          {negado ? "Não foi possível carregar suas chaves." : "Falha ao carregar as configurações."}
+        </p>
+        <div className="login-error" style={{ maxWidth: "560px", marginBottom: "14px", fontWeight: 600 }}>
+          {negado ? "🔒" : "⚠️"} {falha.message}
+        </div>
+        <p className="placeholder-note" style={{ maxWidth: "560px", marginBottom: "14px" }}>
+          {falha.status === 403
+            ? "Esta tela é restrita ao Super Admin. Se você acredita que deveria ter acesso, fale com o administrador do sistema."
+            : falha.status === 401
+              ? "Sua sessão expirou. Faça login novamente para continuar."
+              : "Verifique se o servidor está rodando e tente novamente. Detalhes ficam em storage/logs/app.log."}
+        </p>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button className="btn-primary" onClick={() => load()}>
+            Tentar novamente
+          </button>
+          {falha.status === 401 && (
+            <button className="btn-outline" onClick={() => logout()}>
+              Sair e entrar novamente
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section>

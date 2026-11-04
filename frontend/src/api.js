@@ -15,7 +15,9 @@ async function request(path, options = {}) {
       const data = await res.json();
       detail = data.detail || detail;
     } catch {}
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    const erro = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    erro.status = res.status; // permite tratar 401 (sessão) e 403 (RBAC) na UI
+    throw erro;
   }
   return res.json();
 }

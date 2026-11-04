@@ -169,8 +169,8 @@ export default function PaginasCriadas() {
 
       <p className="placeholder-note" style={{ marginTop: "16px" }}>
         💡 Publicação: cada domínio tem seu **próprio repositório no GitHub** e cada produto
-        tem sua **própria pasta** (`{produto}/index.html`) — o link final fica
-        `https://{dominio}/{produto}/`. Configure o token GitHub em Chaves de API.
+        tem sua **própria pasta** (<code>{`{produto}/index.html`}</code>) — o link final fica
+        <code>{`https://{dominio}/{produto}/`}</code>. Configure o token GitHub em Chaves de API.
       </p>
 
       <Modal open={Boolean(editor)} title={`Editar HTML — ${editor?.titulo || ""}`} onClose={() => setEditor(null)}>

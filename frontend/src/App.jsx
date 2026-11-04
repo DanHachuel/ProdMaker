@@ -4,6 +4,7 @@ import { api } from "./api";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import ToastProvider from "./components/Toast";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Login from "./pages/Login";
 import Produtos from "./pages/Produtos";
 import Dashboard from "./pages/Dashboard";
@@ -31,7 +32,14 @@ import EmailMkt from "./pages/EmailMkt";
 import * as Pages from "./pages/placeholders";
 
 const AppCtx = createContext(null);
+export { AppCtx };
 export const useApp = () => useContext(AppCtx);
+
+// Envolve cada página: uma tela que quebrar mostra o ErrorBoundary dela,
+// sem apagar o resto da aplicação (fim da "tela preta" global).
+function Pagina({ children }) {
+  return <ErrorBoundary>{children}</ErrorBoundary>;
+}
 
 function useTheme() {
   const [theme, setTheme] = useState(() => localStorage.getItem("prodmaker_theme") || "light");
@@ -115,28 +123,28 @@ export default function App() {
             <TopBar />
             <div className="content-wrapper">
               <Routes>
-                <Route path="/" element={<Produtos />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/hosting/dominios" element={<Dominios />} />
-                <Route path="/hosting/paginas" element={<PaginasCriadas />} />
-                <Route path="/studio" element={<Builder />} />
-                <Route path="/studio/biblioteca" element={<Biblioteca />} />
-                <Route path="/adspages" element={<AdsPages />} />
-                <Route path="/adswords" element={<AdsWords />} />
-                <Route path="/adscreator" element={<AdsCreator />} />
-                <Route path="/tracking/visitas" element={<Visitas />} />
-                <Route path="/tracking/vendas" element={<Vendas />} />
-                <Route path="/tracking/gclid" element={<Gclid />} />
-                <Route path="/tracking/fraude" element={<AntiFraude />} />
-                <Route path="/configuracoes/plano" element={<Plano />} />
-                <Route path="/configuracoes/email" element={<EmailMkt />} />
-                <Route path="/adsbot" element={<AdsBot />} />
-                <Route path="/pinterest" element={<Pinterest />} />
-                <Route path="/contas-google" element={<ContasGoogle />} />
-                <Route path="/api-keys" element={<ApiKeys />} />
-                <Route path="/notificacoes" element={<Notificacoes />} />
-                <Route path="/logs" element={<Logs />} />
-                <Route path="/faq" element={<Faq />} />
+                <Route path="/" element={<Pagina><Produtos /></Pagina>} />
+                <Route path="/dashboard" element={<Pagina><Dashboard /></Pagina>} />
+                <Route path="/hosting/dominios" element={<Pagina><Dominios /></Pagina>} />
+                <Route path="/hosting/paginas" element={<Pagina><PaginasCriadas /></Pagina>} />
+                <Route path="/studio" element={<Pagina><Builder /></Pagina>} />
+                <Route path="/studio/biblioteca" element={<Pagina><Biblioteca /></Pagina>} />
+                <Route path="/adspages" element={<Pagina><AdsPages /></Pagina>} />
+                <Route path="/adswords" element={<Pagina><AdsWords /></Pagina>} />
+                <Route path="/adscreator" element={<Pagina><AdsCreator /></Pagina>} />
+                <Route path="/tracking/visitas" element={<Pagina><Visitas /></Pagina>} />
+                <Route path="/tracking/vendas" element={<Pagina><Vendas /></Pagina>} />
+                <Route path="/tracking/gclid" element={<Pagina><Gclid /></Pagina>} />
+                <Route path="/tracking/fraude" element={<Pagina><AntiFraude /></Pagina>} />
+                <Route path="/configuracoes/plano" element={<Pagina><Plano /></Pagina>} />
+                <Route path="/configuracoes/email" element={<Pagina><EmailMkt /></Pagina>} />
+                <Route path="/adsbot" element={<Pagina><AdsBot /></Pagina>} />
+                <Route path="/pinterest" element={<Pagina><Pinterest /></Pagina>} />
+                <Route path="/contas-google" element={<Pagina><ContasGoogle /></Pagina>} />
+                <Route path="/api-keys" element={<Pagina><ApiKeys /></Pagina>} />
+                <Route path="/notificacoes" element={<Pagina><Notificacoes /></Pagina>} />
+                <Route path="/logs" element={<Pagina><Logs /></Pagina>} />
+                <Route path="/faq" element={<Pagina><Faq /></Pagina>} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </div>

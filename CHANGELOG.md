@@ -3,6 +3,35 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.32 — 2026-11-04
+
+- **HOTFIX CRÍTICO — tela preta em `/api-keys` (e `/hosting/paginas`) eliminada.**
+- **Causa raiz 1 (a tela preta):** `pages/ApiKeys.jsx` usava `useApp()` (RBAC,
+  desde a 0.1.22) **sem o import correspondente** — `ReferenceError` em todo
+  render derrubava a árvore inteira do React: clique no menu ou URL direta
+  resultavam em página vazia (fundo escuro = "tela preta"). Corrigido com
+  `import { useApp } from "../App"`.
+- **Causa raiz 2:** `pages/PaginasCriadas.jsx` tinha `{produto}`/`{dominio}` como
+  **expressões JSX** dentro de texto explicativo (`{produto}/index.html` não
+  estava em string) — mesma queda de árvore na rota `/hosting/paginas`.
+  Agora tudo em `<code>{`...`}</code>`.
+- **ErrorBoundary (fim da tela preta como classe de bug):** novo
+  `components/ErrorBoundary.jsx`; cada rota é renderizada dentro dele
+  (`<Pagina>` no `App.jsx`) e a raiz também é protegida (`main.jsx`). Um crash
+  em qualquer página passa a mostrar mensagem amigável + erro + botões
+  ("Tentar novamente", "Recarregar", "Voltar ao Painel"), sem apagar o app.
+- **ApiKeys endurecido:** estado de `loading` (esqueletos enquanto carrega),
+  `try/catch` com status HTTP (401 = sessão expirada → aviso + "Sair e entrar
+  novamente"; 403 = RBAC → "Acesso restrito ao Super Admin") e *optional chaining*
+  (`settings?.api_keys`) para dado ausente não quebrar a renderização.
+- `api.js` agora anexa `status` ao `Error` das respostas não-OK — permite à UI
+  distinguir 401/403 de falhas de rede.
+- Frontend rebuildado (`frontend/dist` versionado) — o pacote npm serve o build
+  corrigido sem o usuário precisar rodar build.
+- Verificação: sonda SSR (render de todas as 24 páginas em Node, sem navegador)
+  — 100% das páginas renderizam sem crash (antes: ApiKeys e PaginasCriadas
+  quebravam).
+
 ## 0.1.31 — 2026-11-04
 
 - **HOTFIX — startup do uvicorn silenciado (terminal 100% estático ao subir).**
