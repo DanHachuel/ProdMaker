@@ -32,7 +32,7 @@ from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, ge
 shutdown.instalar()
 configure_logging()
 
-APP_VERSION = "0.1.28"
+APP_VERSION = "0.1.29"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -334,7 +334,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.28"}
+    return {"version": APP_VERSION, "canonical": "0.1.29"}
 
 
 @app.get("/api/settings")
@@ -482,7 +482,11 @@ def _silent_shutdown_server(application) -> None:
             shutdown.encerrar(0)
 
     porta = int(os.environ.get("PRODMAKER_PORT") or 8188)
-    config = uvicorn.Config(application, host="127.0.0.1", port=porta, log_config=uvicorn_log_config())
+    # access_log=False: navegação (CSS/JS/SPA) e chamadas de API NÃO devem imprimir
+    # linha de acesso por requisição no terminal — o terminal fica estático. O ciclo
+    # de vida e os erros reais continuam saindo (uvicorn.error); o access log fica só
+    # em storage/logs/app.log quando explicitamente reabilitado.
+    config = uvicorn.Config(application, host="127.0.0.1", port=porta, log_config=uvicorn_log_config(), access_log=False)
     try:
         _SilentServer(config).run()
     except (KeyboardInterrupt, asyncio.CancelledError):

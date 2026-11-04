@@ -44,7 +44,13 @@ def configure() -> str:
             root.setLevel(logging.INFO)
             if not any(isinstance(h, logging.FileHandler) for h in root.handlers):
                 root.addHandler(handler)
-            for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "app"):
+            # Só os loggers da aplicação (app.*) recebem o handler/formatter aqui.
+            # Os loggers do uvicorn NÃO devem receber um Formatter global — o access
+            # log do uvicorn trafega os dados em record.args (5-tupla) e um Formatter
+            # puro referencia campos (client_addr...) que não existem no record,
+            # estourando "--- Logging error ---" a cada requisição. O uvicorn é
+            # configurado à parte por uvicorn_log_config() (com AccessFormatter).
+            for name in ("app",):
                 logger = logging.getLogger(name)
                 if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
                     logger.addHandler(handler)

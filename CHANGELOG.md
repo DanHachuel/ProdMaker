@@ -3,6 +3,23 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.29 — 2026-11-04
+
+- **HOTFIX — terminal 100% estável após subir (nada de spam ao navegar).**
+- `app/main.py`: `uvicorn.Config` agora passa **`access_log=False`** — cada acesso
+  HTTP (CSS/JS/SPA/API) **não imprime mais** uma linha de access log no terminal. O
+  ciclo de vida e os erros reais continuam saindo; o terminal fica limpo enquanto o
+  usuário navega pelo sistema.
+- `app/services/logging_setup.py` (`configure()`): o handler de arquivo passa a ser
+  anexado **apenas aos loggers da aplicação (`app.*`)** — não mais aos loggers do
+  uvicorn. Um `logging.Formatter` global nos loggers do uvicorn referenciava campos
+  (`client_addr`...) ausentes no record do access log, gerando `--- Logging error ---`
+  a cada requisição. O uvicorn é configurado à parte por `uvicorn_log_config()`.
+- Nota: o **heartbeat periódico** já havia sido removido no `0.1.28` (terminal estático
+  após subir) e o `KeyError: 'client_addr'` no access log já fora corrigido no `0.1.27`
+  (via `uvicorn.logging.AccessFormatter`). Este hotfix fecha o ciclo desligando o
+  access log no terminal e isolando o formatter em `app.*`.
+
 ## 0.1.28 — 2026-11-03
 
 - **HOTFIX — terminal limpo: removido o heartbeat periódico.**
