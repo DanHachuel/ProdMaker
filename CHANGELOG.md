@@ -3,6 +3,23 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.31 — 2026-11-04
+
+- **HOTFIX — startup do uvicorn silenciado (terminal 100% estático ao subir).**
+- `app/services/logging_setup.py` (`uvicorn_log_config()`): loggers `uvicorn` e
+  `uvicorn.error` passam a `WARNING`. As 4 linhas INFO de ciclo de vida —
+  "Started server process", "Waiting for application startup.",
+  "Application startup complete." e "Uvicorn running on http://127.0.0.1:8188"
+  — **não aparecem mais**. Erros REAIS (nível ERROR, ex.: porta em uso) continuam
+  saindo no terminal e em `storage/logs/app.log`.
+- Resultado: o terminal exibe apenas o box do ProdMaker (a URL já é impressa pelo
+  launcher `scripts/cli.mjs` depois de o servidor começar a ouvir) e eventuais erros
+  reais — o restante do boot fica limpo. Testado: boot + rajada de requisições →
+  zero linhas de startup do uvicorn no terminal, exit 0 em Ctrl+C, sem traceback.
+- `AccessFormatter` mantido como rede de segurança (inerte com `access_log=False`).
+- Bump 0.1.31 (package.json, cli.mjs, main.py APP_VERSION + canonical) + CHANGELOG.
+  (0.1.30 já havia sido publicada pela sessão concorrente — renumera por colisão.)
+
 ## 0.1.30 — 2026-11-04
 
 - **HOTFIX — terminal 100% silencioso ao navegar + formatação + morte do filho

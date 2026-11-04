@@ -100,9 +100,15 @@ def uvicorn_log_config() -> dict:
             "access": {"class": "logging.StreamHandler", "formatter": "access", "stream": "ext://sys.stdout"},
             "file": {"class": "logging.FileHandler", "formatter": "default", "filename": log_path, "encoding": "utf-8"},
         },
+        # uvicorn/uvicorn.error em WARNING: silencia as 4 linhas INFO de ciclo de
+        # vida ("Started server process", "Waiting for application startup.",
+        # "Application startup complete.", "Uvicorn running on ...") — o terminal
+        # fica 100% ESTÁTICO. Erros REAIS (ERROR, ex.: porta em uso) continuam
+        # aparecendo no terminal e no app.log. uvicorn.access segue inerte
+        # (access_log=False no Config); AccessFormatter mantido como rede de seguranca.
         "loggers": {
-            "uvicorn": {"handlers": ["default", "file"], "level": "INFO", "propagate": False},
-            "uvicorn.error": {"handlers": ["default", "file"], "level": "INFO", "propagate": False},
+            "uvicorn": {"handlers": ["default", "file"], "level": "WARNING", "propagate": False},
+            "uvicorn.error": {"handlers": ["default", "file"], "level": "WARNING", "propagate": False},
             "uvicorn.access": {"handlers": ["access", "file"], "level": "INFO", "propagate": False},
             "app": {"handlers": ["default", "file"], "level": "INFO", "propagate": False},
         },
