@@ -3,6 +3,26 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.34 — 2026-11-05
+
+- **HOTFIX CRÍTICO — launcher Node.js não encerra mais silenciosamente (terminal
+  fica parado no prompt).**
+- Causa raiz: ao remover o `heartbeat` (`setInterval`), o Event Loop do Node podia
+  ficar sem nenhum "handle" ativo — um `await` pendente **sozinho** não segura o
+  loop (Promise não é handle do event loop) — então o Node fechava e devolvia o
+  `PS C:\…>` logo após o box, mesmo com o Python rodando. Mais visível no MobaXterm.
+- Correção (`scripts/cli.mjs`), logo após o box/"O servidor está rodando":
+  - **`process.stdin.resume()`** — referencia um handle ativo (o console); o Node
+    continua VIVO enquanto o servidor está no ar. Não imprime nada; o Ctrl+C segue
+    chegando como SIGINT → `matarAgora` (taskkill silencioso + `process.exit(0)`).
+  - **`process.stdin.on("end"/"close")` → `matarAgora(0)`** — fechar o terminal encerra
+    limpo (mata o filho e sai), sem o supervisor tentar reiniciar sobre um terminal morto.
+- **Sem `child.unref()`**: confirmado que não existe nenhuma chamada `unref()` no launcher
+  (nada a remover) — o filho Python é direto (não-`detached`), então morre junto com o
+  terminal; o supervisor (`close` → auto-restart até 3×) e a propagação de código na
+  saída permanecem intactos.
+- Bump 0.1.33 → 0.1.34 (package.json, cli.mjs, app/main.py APP_VERSION + canonical) + CHANGELOG.
+
 ## 0.1.33 — 2026-11-05
 
 - **Release da correção da tela preta em `/api-keys` (publicada por este pipeline).**

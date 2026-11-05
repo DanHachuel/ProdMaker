@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.33";
+const APP_VERSION = "0.1.34";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -507,6 +507,17 @@ async function commandRun() {
   }
   console.log("Se o servidor cair, o launcher tenta reiniciar sozinho (até 3 vezes).");
   console.log("");
+
+  // Mantém o Event Loop do Node VIVO enquanto o servidor está no ar. Com o
+  // heartbeat (setInterval) removido, um `await` pendente SOZINHO não segura o
+  // loop — Promise não é "handle" do event loop — e o Node fechava, devolvendo o
+  // prompt (ex.: MobaXterm). stdin.resume() referência um handle ativo (o console)
+  // sem imprimir nada; o Ctrl+C continua chegando como SIGINT (matarAgora).
+  if (process.stdin && process.stdin.resume) process.stdin.resume();
+  // NÃO tratar stdin 'end'/'close' como "encerrar": num stdin NÃO-tty (pipe, CI,
+  // redireção) o EOF é imediato e causaria uma saída falsa — o Node fecharia do
+  // mesmo jeito. O fechamento do terminal já derruba Node + filho juntos, pois são
+  // processos anexados ao console (o Python é filho direto, não-`detached`).
 
   const resultado = await encerramento;
   if (resultado.code !== 0) {
