@@ -3,6 +3,29 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.35 — 2026-11-05
+
+- **HOTFIX DEFINITIVO — o launcher (Node) não morre mais sozinho, em QUALQUER
+  terminal (incluindo MobaXterm/Windows).**
+- Causa raiz: com o `heartbeat` (`setInterval`) removido, o event loop do Node podia
+  esvaziar — um `await`/Promise **não** é "handle" ativo, e os pipes/`stdin` variam por
+  terminal (num stdin não-tty o `resume()` não segura) — então o Node fechava e devolvia
+  o `PS C:\…>` mesmo com o Python no ar.
+- Correções (`scripts/cli.mjs`):
+  - **Keep-alive à prova de falhas:** `keepAlive = setInterval(() => {}, 1 << 30)` — timer
+    REFERENCIADO que impede o loop de esvaziar. O launcher só sai por saída EXPLÍCITA
+    (Ctrl+C/sinal ou fim do filho), independente de `stdin`/`isTTY`. Reforçado por
+    `stdin.resume()`.
+  - **Sinais do MobaXterm:** `SIGHUP` (fechar terminal) e `SIGTERM` passam a encerrar
+    LIMPO — `matarAgora(0)` (mata o filho Python via `taskkill`/SIGKILL e sai com 0) —
+    em vez de morrer abruptamente ou deixar órfãos. `SIGINT` (Ctrl+C) segue silencioso.
+  - **`cross-spawn`:** o spawn do servidor usa `cross-spawn` (padrão da indústria para
+    Windows/cmd/PowerShell) quando instalado, com **fallback silencioso** para o `spawn`
+    nativo do Node caso não esteja — o launcher nunca quebra por isso.
+- `package.json`: + `dependencies: { cross-spawn: ^7.0.5 }`; bump 0.1.34 → 0.1.35.
+- Instrumentação `storage/logs/launcher-debug.log` (gitignored) mantida — diagnóstico
+  passivo, sem exigir qualquer ação do usuário.
+
 ## 0.1.34 — 2026-11-05
 
 - **HOTFIX CRÍTICO — launcher Node.js não encerra mais silenciosamente (terminal

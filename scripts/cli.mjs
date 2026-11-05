@@ -2,7 +2,8 @@
 /* ProdMaker launcher — install | run | doctor
  * REGRA ZERO: este launcher NUNCA abre o navegador. Apenas imprime a URL.
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawn as nodeSpawn, spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
@@ -13,9 +14,21 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
+// cross-spawn (padrão da indústria p/ compatibilidade de processos no Windows/cmd/
+// PowerShell): usado quando a dependência está instalada (publicada via npm). Fallback
+// SILENCIOSO para o spawn nativo do Node se não estiver (clone local sem `npm install`,
+// smoke de CI) — o launcher NUNCA quebra por causa disso.
+const require = createRequire(import.meta.url);
+let crossSpawn = null;
+try {
+  crossSpawn = require("cross-spawn");
+} catch {
+  crossSpawn = null;
+}
+const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.34";
+const APP_VERSION = "0.1.35";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -53,7 +66,7 @@ function launcherDbg(mensagem) {
 }
 try {
   fs.mkdirSync(path.dirname(LAUNCHER_DEBUG_LOG), { recursive: true });
-  fs.writeFileSync(LAUNCHER_DEBUG_LOG, `[${new Date().toISOString()}] [NODE] launcher iniciado (pid ${process.pid}) cmd=${process.argv[2] || "run"}\n`);
+  fs.writeFileSync(LAUNCHER_DEBUG_LOG, `[${new Date().toISOString()}] [NODE] launcher iniciado (pid ${process.pid}) cmd=${process.argv[2] || "run"} spawn=${crossSpawn ? "cross-spawn" : "nativo(fallback)"}\n`);
 } catch {}
 // beforeExit = o event loop ESVASIOU (Node está a ponto de fechar SOZINHO). Se isso
 // aparecer ANTES de qualquer [SIGNAL]/[CHILD], a morte é "loop vazio", não um sinal.
@@ -431,12 +444,14 @@ async function commandRun() {
   let currentChild = null;
   let stopping = false;
   let lastStart = Date.now();
+  let keepAlive = null;
 
   // PARADA FORÇADA (trava de Ctrl+C): mata o processo Python sem dar tempo dele
   // de imprimir traceback (KeyboardInterrupt/CancelledError) — o terminal volta
   // ao prompt instantaneamente.
   const matarAgora = (code) => {
     stopping = true;
+    if (keepAlive) clearInterval(keepAlive);
     launcherDbg(`[STOP] matarAgora(code=${code ?? 0}) — matando o filho e saindo.`);
     try {
       if (currentChild?.pid && process.platform === "win32") {
@@ -452,9 +467,10 @@ async function commandRun() {
   // enviar SIGHUP/SIGTERM no fechamento do terminal — queremos saber qual encerra.
   process.on("SIGINT", () => { launcherDbg("[SIGNAL] SIGINT (Ctrl+C)"); matarAgora(0); });
   process.on("SIGTERM", () => { launcherDbg("[SIGNAL] SIGTERM"); matarAgora(0); });
-  // SIGHUP (terminal que fecha/detacha no Windows/MobaXterm): hoje ignorado (segue
-  // supervisionando). Registrado para sabermos se é o fechamento do terminal.
-  process.on("SIGHUP", () => launcherDbg("[SIGNAL] SIGHUP (terminal fechando?)"));
+  // SIGHUP (MobaXterm fecha/detacha o terminal): encerra LIMPO — mata o filho Python
+  // (taskkill/SIGKILL) e sai com 0 — em vez de deixar o Node morrer abruptamente ou
+  // deixar o Python órfão. É o "terminal fechou → servidor cai junto, com controle".
+  process.on("SIGHUP", () => { launcherDbg("[SIGNAL] SIGHUP (terminal fechando?) — encerrando limpo"); matarAgora(0); });
 
   // Sem heartbeat no terminal: após subir, o terminal fica ESTÁTICO (nenhuma
   // mensagem periódica). O monitoramento de vida já existe — silencioso — em
@@ -546,6 +562,12 @@ async function commandRun() {
   // sem imprimir nada; o Ctrl+C continua chegando como SIGINT (matarAgora).
   launcherDbg(`[STDIN] isTTY=${Boolean(process.stdin && process.stdin.isTTY)} resume-disponivel=${Boolean(process.stdin && process.stdin.resume)}`);
   launcherDbg("[RUN] servidor pronto; box impresso; aguardando o 'close' do filho — o Node deve permanecer VIVO a partir daqui.");
+  // MANTÉM O NODE VIVO À PROVA DE FALHAS (a correção DEFINITIVA). Um timer
+  // REFERENCIADO impede que o event loop esvazie — o launcher NUNCA fecha sozinho,
+  // independentemente de stdin/isTTY/pipes (era a morte no MobaXterm). A saída só
+  // acontece de forma EXPLÍCITA: matarAgora (Ctrl+C/SIGTERM/SIGHUP) ou o fim do
+  // filho (tail → process.exit). stdin.resume() é reforço extra e inofensivo.
+  keepAlive = setInterval(() => {}, 1 << 30);
   if (process.stdin && process.stdin.resume) process.stdin.resume();
   // NÃO tratar stdin 'end'/'close' como "encerrar": num stdin NÃO-tty (pipe, CI,
   // redireção) o EOF é imediato e causaria uma saída falsa — o Node fecharia do
