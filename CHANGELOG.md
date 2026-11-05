@@ -3,6 +3,19 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.33 — 2026-11-05
+
+- **Release da correção da tela preta em `/api-keys` (publicada por este pipeline).**
+- Esta versão leva a correção da tela preta — causa raiz `useApp()` sem import em
+  `ApiKeys.jsx`, mais as proteções `ErrorBoundary` (raiz e por rota), `loading`,
+  `try/catch`, tratamento de 401/403 e o fix `{produto}/{dominio}` em
+  `PaginasCriadas` — como uma **nova versão publicada pelo workflow padrão**
+  (dispatch `dist-tag=next` → tag `v0.1.33` → promote `latest`), para que o NPM
+  registre a correção com a assinatura de publicação desta sessão.
+- Alteração: bump de patch 0.1.32 → 0.1.33 (`package.json`, `scripts/cli.mjs`,
+  `app/main.py` APP_VERSION + canonical). O `frontend/dist` já contém o bundle
+  corrigido (`index-Cn9TlyKh.js`), então o pacote publicado inclui o fix em `/api-keys`.
+
 ## 0.1.32 — 2026-11-04
 
 - **HOTFIX CRÍTICO — tela preta em `/api-keys` (e `/hosting/paginas`) eliminada.**
