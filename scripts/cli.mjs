@@ -38,6 +38,30 @@ function resolveHome() {
   return path.join(os.homedir(), "ProdMaker");
 }
 
+// ---------------------------------------------------------------------------
+// DIAGNÓSTICO — "launcher fechando sozinho no MobaXterm".
+// Grava o momento EXATO da morte do Node + eventos de sinal/filho em
+// storage/logs/launcher-debug.log para descobrirmos a causa raiz sem adivinhar.
+// O log é SOBRESCRITO a cada start (fresh) — análise de uma execução só.
+// ---------------------------------------------------------------------------
+const LAUNCHER_DEBUG_LOG = path.join(resolveHome(), "storage", "logs", "launcher-debug.log");
+function launcherDbg(mensagem) {
+  try {
+    fs.mkdirSync(path.dirname(LAUNCHER_DEBUG_LOG), { recursive: true });
+    fs.appendFileSync(LAUNCHER_DEBUG_LOG, `[${new Date().toISOString()}] ${mensagem}\n`);
+  } catch {}
+}
+try {
+  fs.mkdirSync(path.dirname(LAUNCHER_DEBUG_LOG), { recursive: true });
+  fs.writeFileSync(LAUNCHER_DEBUG_LOG, `[${new Date().toISOString()}] [NODE] launcher iniciado (pid ${process.pid}) cmd=${process.argv[2] || "run"}\n`);
+} catch {}
+// beforeExit = o event loop ESVASIOU (Node está a ponto de fechar SOZINHO). Se isso
+// aparecer ANTES de qualquer [SIGNAL]/[CHILD], a morte é "loop vazio", não um sinal.
+process.on("beforeExit", (code) => launcherDbg(`[NODE] beforeExit — event loop vazio, Node fechando sozinho (code hint: ${code})`));
+process.on("exit", (code) => launcherDbg(`[NODE] Process exiting with code: ${code}`));
+process.on("uncaughtException", (err) => launcherDbg(`[NODE] Uncaught Exception: ${err && err.stack ? err.stack : err}`));
+process.on("unhandledRejection", (reason) => launcherDbg(`[NODE] Unhandled Rejection: ${reason && reason.stack ? reason.stack : reason}`));
+
 function storagePath(home, ...parts) {
   return path.join(home, "storage", ...parts);
 }
@@ -413,6 +437,7 @@ async function commandRun() {
   // ao prompt instantaneamente.
   const matarAgora = (code) => {
     stopping = true;
+    launcherDbg(`[STOP] matarAgora(code=${code ?? 0}) — matando o filho e saindo.`);
     try {
       if (currentChild?.pid && process.platform === "win32") {
         spawn("taskkill", ["/F", "/T", "/PID", String(currentChild.pid)], { stdio: "ignore", shell: false, windowsHide: true });
@@ -423,11 +448,13 @@ async function commandRun() {
     process.exit(code ?? 0);
   };
 
-  process.on("SIGINT", () => matarAgora(0));
-  process.on("SIGTERM", () => matarAgora(0));
-  // SIGHUP (terminal que fecha/detacha no Windows/MobaXterm): NÃO matar o servidor —
-  // ignorar o sinal e seguir supervisionando.
-  process.on("SIGHUP", () => {});
+  // DIAGNÓSTICO: registra QUAL sinal chega e QUANDO. O MobaXterm (pty/Cygwin) pode
+  // enviar SIGHUP/SIGTERM no fechamento do terminal — queremos saber qual encerra.
+  process.on("SIGINT", () => { launcherDbg("[SIGNAL] SIGINT (Ctrl+C)"); matarAgora(0); });
+  process.on("SIGTERM", () => { launcherDbg("[SIGNAL] SIGTERM"); matarAgora(0); });
+  // SIGHUP (terminal que fecha/detacha no Windows/MobaXterm): hoje ignorado (segue
+  // supervisionando). Registrado para sabermos se é o fechamento do terminal.
+  process.on("SIGHUP", () => launcherDbg("[SIGNAL] SIGHUP (terminal fechando?)"));
 
   // Sem heartbeat no terminal: após subir, o terminal fica ESTÁTICO (nenhuma
   // mensagem periódica). O monitoramento de vida já existe — silencioso — em
@@ -444,6 +471,7 @@ async function commandRun() {
         shell: false,
         windowsHide: true,
       });
+      launcherDbg(`[CHILD] spawn Python pid=${currentChild.pid} port=${port}`);
 
       // Proxy de logs: o Python NÃO imprime mais direto no terminal (stdio em pipe).
       // Sem handles de console de saída herdados, o Windows NÃO aloca a janela preta
@@ -459,6 +487,7 @@ async function commandRun() {
       });
 
       currentChild.on("error", (error) => {
+        launcherDbg(`[CHILD] error: ${error && error.stack ? error.stack : error}`);
         console.error(`Falha ao iniciar o Python (${error.message}).`);
         resolve({ code: 1 });
       });
@@ -467,6 +496,7 @@ async function commandRun() {
       // log. Um retorno misterioso ao prompt do PowerShell fica com causa
       // registrada em vez de silencioso.
       currentChild.on("exit", (code, signal) => {
+        launcherDbg(`[CHILD] Python exited. Code: ${code ?? "null"}, Signal: ${signal ?? "null"}${stopping ? " (stopping)" : ""}`);
         if (stopping) return;
         console.error(
           `[ProdMaker] Processo do servidor saiu (código ${code ?? "null"}, sinal ${signal ?? "null"}). ` +
@@ -475,6 +505,7 @@ async function commandRun() {
       });
 
       currentChild.on("close", (code) => {
+        launcherDbg(`[CHILD] Python closed. Code: ${code ?? "null"}${stopping ? " (stopping)" : ""}`);
         if (stopping) {
           resolve({ code: code ?? 0 });
           return;
@@ -513,6 +544,8 @@ async function commandRun() {
   // loop — Promise não é "handle" do event loop — e o Node fechava, devolvendo o
   // prompt (ex.: MobaXterm). stdin.resume() referência um handle ativo (o console)
   // sem imprimir nada; o Ctrl+C continua chegando como SIGINT (matarAgora).
+  launcherDbg(`[STDIN] isTTY=${Boolean(process.stdin && process.stdin.isTTY)} resume-disponivel=${Boolean(process.stdin && process.stdin.resume)}`);
+  launcherDbg("[RUN] servidor pronto; box impresso; aguardando o 'close' do filho — o Node deve permanecer VIVO a partir daqui.");
   if (process.stdin && process.stdin.resume) process.stdin.resume();
   // NÃO tratar stdin 'end'/'close' como "encerrar": num stdin NÃO-tty (pipe, CI,
   // redireção) o EOF é imediato e causaria uma saída falsa — o Node fecharia do
