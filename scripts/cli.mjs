@@ -28,7 +28,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.36";
+const APP_VERSION = "0.1.37";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -507,7 +507,12 @@ async function commandRun() {
       lastStart = Date.now();
       currentChild = spawn(python, pythonArgs, {
         cwd: PKG_ROOT,
-        stdio: ["inherit", "pipe", "pipe"],
+        // stdio 'inherit': o Python escreve DIRETO no terminal do MobaXterm (sem
+        // pipes de proxy). Handle do filho vivo + o keep-alive (timer de 1h, unref
+        // neutralizado) => o loop NÃO esvazia e o Node não fecha sozinho.
+        // windowsHide: true evita a janela preta de CMD; filho NÃO-detached (morre
+        // junto se o terminal fechar). Sem qualquer unref() no filho.
+        stdio: "inherit",
         env,
         shell: false,
         windowsHide: true,
@@ -588,12 +593,17 @@ async function commandRun() {
   // sem imprimir nada; o Ctrl+C continua chegando como SIGINT (matarAgora).
   launcherDbg(`[STDIN] isTTY=${Boolean(process.stdin && process.stdin.isTTY)} resume-disponivel=${Boolean(process.stdin && process.stdin.resume)}`);
   launcherDbg("[RUN] servidor pronto; box impresso; aguardando o 'close' do filho — o Node deve permanecer VIVO a partir daqui.");
-  // MANTÉM O NODE VIVO À PROVA DE FALHAS (a correção DEFINITIVA). Um timer
-  // REFERENCIADO impede que o event loop esvazie — o launcher NUNCA fecha sozinho,
-  // independentemente de stdin/isTTY/pipes (era a morte no MobaXterm). A saída só
-  // acontece de forma EXPLÍCITA: matarAgora (Ctrl+C/SIGTERM/SIGHUP) ou o fim do
-  // filho (tail → process.exit). stdin.resume() é reforço extra e inofensivo.
-  keepAlive = setInterval(() => {}, 1 << 30);
+  // TRAVA BRUTAL DO EVENT LOOP (a prova real de que o loop NÃO esvazia mais): um
+  // timer de 1h com o método unref() NEUTRALIZADO — nada (GC nem o timer do ambiente
+  // MobaXterm) consegue "soltá-lo". O setInterval anterior usava 1<<30 (~12 dias);
+  // atrasos tão absurdos acabavam sendo DESCARTADOS no ambiente → beforeExit/exit(0).
+  // 1h é um atraso normal que qualquer implementação de timer honra e, sem unref,
+  // mantém o Node VIVO indefinidamente. Saída só por EXPLÍCITO: Ctrl+C (SIGINT →
+  // matarAgora) ou o fim do filho (tail → process.exit). SIGHUP/SIGTERM são IGNORADOS.
+  keepAlive = setInterval(() => {}, 60 * 60 * 1000);
+  if (keepAlive && typeof keepAlive.unref === "function") {
+    keepAlive.unref = function () { return this; }; // nada pode desreferenciar o timer
+  }
   if (process.stdin && process.stdin.resume) process.stdin.resume();
   // NÃO tratar stdin 'end'/'close' como "encerrar": num stdin NÃO-tty (pipe, CI,
   // redireção) o EOF é imediato e causaria uma saída falsa — o Node fecharia do

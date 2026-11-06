@@ -3,6 +3,23 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.37 — 2026-11-06
+
+- **HOTFIX DEFINITIVO — event loop NÃO esvazia mais: o terminal trava no box (não volta ao prompt).**
+- Prova do diagnóstico: o terminal capturou `[LAUNCHER] beforeExit — event loop VAZIO (code=0)`
+  — **não foi hard-kill**; o Node fechou porque o loop esvaziou. O `setInterval(…, 1<<30)`
+  (~12 dias) estava sendo **descartado** no ambiente MobaXterm.
+- Correção (`scripts/cli.mjs`):
+  - **Trava brutal do event loop:** `keepAlive = setInterval(() => {}, 60*60*1000)` (timer de 1h —
+    atraso "normal" que qualquer timer honra) com **`keepAlive.unref = function(){return this}`**
+    (NEUTRALIZA o unref — nada pode desreferenciar/limpar o timer). Reforçado por `stdin.resume()`.
+  - **`stdio: 'inherit'`** no spawn do servidor: o Python escreve direto no terminal do MobaXterm;
+    o Node depende do handle do filho + do timer para permanecer vivo.
+  - Confirmado: **nenhum `unref()` no filho** (nada a remover). `windowsHide: true` mantido (sem
+    janela de CMD); filho não-`detached`.
+  - SIGHUP/SIGTERM seguem IMPRIMIDOS e IGNORADOS; interceptores `[LAUNCHER]` de morte mantidos.
+- Bump 0.1.36 → 0.1.37 (package.json, cli.mjs, app/main.py + canonical) + CHANGELOG.
+
 ## 0.1.36 — 2026-11-06
 
 - **HOTFIX — o launcher NUNCA mais fecha sem imprimir o motivo no terminal.**
