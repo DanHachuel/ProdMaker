@@ -28,7 +28,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.35";
+const APP_VERSION = "0.1.36";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -68,12 +68,34 @@ try {
   fs.mkdirSync(path.dirname(LAUNCHER_DEBUG_LOG), { recursive: true });
   fs.writeFileSync(LAUNCHER_DEBUG_LOG, `[${new Date().toISOString()}] [NODE] launcher iniciado (pid ${process.pid}) cmd=${process.argv[2] || "run"} spawn=${crossSpawn ? "cross-spawn" : "nativo(fallback)"}\n`);
 } catch {}
-// beforeExit = o event loop ESVASIOU (Node está a ponto de fechar SOZINHO). Se isso
-// aparecer ANTES de qualquer [SIGNAL]/[CHILD], a morte é "loop vazio", não um sinal.
-process.on("beforeExit", (code) => launcherDbg(`[NODE] beforeExit — event loop vazio, Node fechando sozinho (code hint: ${code})`));
-process.on("exit", (code) => launcherDbg(`[NODE] Process exiting with code: ${code}`));
-process.on("uncaughtException", (err) => launcherDbg(`[NODE] Uncaught Exception: ${err && err.stack ? err.stack : err}`));
-process.on("unhandledRejection", (reason) => launcherDbg(`[NODE] Unhandled Rejection: ${reason && reason.stack ? reason.stack : reason}`));
+// Encerramento CONTROLADO (Ctrl+C → matarAgora) seta esta flag; aí a mensagem de
+// morte NÃO é impressa (Ctrl+C continua limpo). Em qualquer OUTRA saída, o MOTIVO é
+// cuspido no TERMINAL — o terminal não pode fechar sem antes dizer por quê.
+let controlledStop = false;
+
+// beforeExit = o event loop ESVASIOU. Com o keep-alive (setInterval) NÃO deve disparar.
+process.on("beforeExit", (code) => {
+  const m = `[LAUNCHER] beforeExit — event loop VAZIO (Node fechando sozinho). code=${code}`;
+  launcherDbg(m);
+  console.error(`\n${m}`);
+});
+process.on("exit", (code) => {
+  // O terminal NUNCA fecha sem imprimir o motivo. Ctrl+C (matarAgora→controlledStop)
+  // tem uma linha breve; qualquer OUTRA saída mostra o código (a pista da morte).
+  const m = controlledStop ? "[LAUNCHER] Encerrado (Ctrl+C)." : `[LAUNCHER] O Node está encerrando. Código: ${code}`;
+  launcherDbg(m);
+  console.error(`\n${m}`);
+});
+process.on("uncaughtException", (err) => {
+  const m = `[LAUNCHER] Erro não tratado: ${err && err.stack ? err.stack : err}`;
+  launcherDbg(m);
+  console.error(`\n${m}`);
+});
+process.on("unhandledRejection", (reason) => {
+  const m = `[LAUNCHER] Promise rejeitada: ${reason && reason.stack ? reason.stack : reason}`;
+  launcherDbg(m);
+  console.error(`\n${m}`);
+});
 
 function storagePath(home, ...parts) {
   return path.join(home, "storage", ...parts);
@@ -451,6 +473,7 @@ async function commandRun() {
   // ao prompt instantaneamente.
   const matarAgora = (code) => {
     stopping = true;
+    controlledStop = true; // saída intencional (Ctrl+C) — não imprime "[LAUNCHER] encerrando"
     if (keepAlive) clearInterval(keepAlive);
     launcherDbg(`[STOP] matarAgora(code=${code ?? 0}) — matando o filho e saindo.`);
     try {
@@ -465,12 +488,14 @@ async function commandRun() {
 
   // DIAGNÓSTICO: registra QUAL sinal chega e QUANDO. O MobaXterm (pty/Cygwin) pode
   // enviar SIGHUP/SIGTERM no fechamento do terminal — queremos saber qual encerra.
+  // Ctrl+C (SIGINT) = saída INTENCIONAL → matarAgora (controlado, silencioso).
   process.on("SIGINT", () => { launcherDbg("[SIGNAL] SIGINT (Ctrl+C)"); matarAgora(0); });
-  process.on("SIGTERM", () => { launcherDbg("[SIGNAL] SIGTERM"); matarAgora(0); });
-  // SIGHUP (MobaXterm fecha/detacha o terminal): encerra LIMPO — mata o filho Python
-  // (taskkill/SIGKILL) e sai com 0 — em vez de deixar o Node morrer abruptamente ou
-  // deixar o Python órfão. É o "terminal fechou → servidor cai junto, com controle".
-  process.on("SIGHUP", () => { launcherDbg("[SIGNAL] SIGHUP (terminal fechando?) — encerrando limpo"); matarAgora(0); });
+  // SIGHUP e SIGTERM: o MobaXterm (pty) pode enviá-los como FANTASMA (perda de foco /
+  // fechamento). Tratá-los como "morrer" derrubaria o launcher sem o usuário pedir.
+  // REGRA: imprimir no terminal e IGNORAR (não chamar matarAgora) — o Node PERMANECE
+  // VIVO. O encerramento segue sendo só pelo Ctrl+C.
+  process.on("SIGTERM", () => { const m = "[LAUNCHER] Sinal SIGTERM recebido — IGNORADO (Node permanece vivo)."; launcherDbg(m); console.error(`\n${m}`); });
+  process.on("SIGHUP", () => { const m = "[LAUNCHER] Sinal SIGHUP recebido — IGNORADO (Node permanece vivo)."; launcherDbg(m); console.error(`\n${m}`); });
 
   // Sem heartbeat no terminal: após subir, o terminal fica ESTÁTICO (nenhuma
   // mensagem periódica). O monitoramento de vida já existe — silencioso — em
@@ -514,9 +539,10 @@ async function commandRun() {
       currentChild.on("exit", (code, signal) => {
         launcherDbg(`[CHILD] Python exited. Code: ${code ?? "null"}, Signal: ${signal ?? "null"}${stopping ? " (stopping)" : ""}`);
         if (stopping) return;
+        // A morte do Python NÃO fecha o Node: imprime o motivo (visível) e o supervisor reinicia.
         console.error(
-          `[ProdMaker] Processo do servidor saiu (código ${code ?? "null"}, sinal ${signal ?? "null"}). ` +
-            `Detalhes: ${path.join(home, "storage", "logs", "app.log")}`
+          `\n[ERRO FATAL] O servidor Python morreu. Código: ${code ?? "null"}, Sinal: ${signal ?? "null"}. ` +
+            `O launcher vai tentar reiniciar. Detalhes: ${path.join(home, "storage", "logs", "app.log")}`
         );
       });
 

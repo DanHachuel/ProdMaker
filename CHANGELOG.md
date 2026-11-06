@@ -3,6 +3,23 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.36 — 2026-11-06
+
+- **HOTFIX — o launcher NUNCA mais fecha sem imprimir o motivo no terminal.**
+- `scripts/cli.mjs`:
+  - **Interceptor global VISÍVEL no terminal:** `exit`/`uncaughtException`/`unhandledRejection`/
+    `beforeExit` agora imprimem no console (além do `storage/logs/launcher-debug.log`). Saída
+    inesperada → `[LAUNCHER] O Node está encerrando. Código: X`; Ctrl+C → `[LAUNCHER] Encerrado (Ctrl+C).`.
+    Regra de leitura: se o terminal voltar ao prompt **SEM** essa linha, foi **hard-kill do
+    Windows** (Node morto à força) — aí o passo seguinte é isolar o processo (windowsHide/detached).
+  - **SIGHUP e SIGTERM: imprimir e IGNORAR** (não chamam `matarAgora`). O MobaXterm (pty) pode
+    enviá-los como **fantasma** (perda de foco/fechamento) e estava derrubando o launcher. Agora o
+    Node **permanece vivo**; encerrar continua sendo só pelo Ctrl+C (SIGINT).
+  - **Morte do Python:** `child.on('exit')` imprime `[ERRO FATAL] O servidor Python morreu...` no
+    terminal e **não** fecha o Node — o supervisor (`close` → auto-restart até 3×) assume.
+  - Mantidos: keep-alive definitivo (`setInterval`) e `cross-spawn` (com fallback nativo).
+- Bump 0.1.35 → 0.1.36 (package.json, cli.mjs, app/main.py APP_VERSION + canonical) + CHANGELOG.
+
 ## 0.1.35 — 2026-11-05
 
 - **HOTFIX DEFINITIVO — o launcher (Node) não morre mais sozinho, em QUALQUER
