@@ -3,6 +3,24 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.40 — 2026-11-07
+
+- **HOTFIX — morte casada: fechar o terminal derruba o servidor (sem processo fantasma).**
+- Reverte o modelo daemon (0.1.38/0.1.39) que deixava o servidor "fantasma" rodando após
+  fechar a janela — comportamento inaceitável.
+- `scripts/cli.mjs` (`commandRun`):
+  - Filho **NÃO-detached** + **console-attached** (`python.exe`, `stdio: 'inherit'`): fechar o
+    terminal (CTRL_CLOSE/pty) derruba o grupo do console — **não há órfão**.
+  - **Sinais:** SIGINT (Ctrl+C), SIGHUP e SIGTERM => `matarAgora(0)` (mata o filho via
+    `taskkill /F /T` ou SIGKILL e encerra o Node).
+  - **`process.on('exit', killChild)`:** qualquer saída do Node mata o filho — nada fica
+    rodando sozinho.
+  - **Filho morreu (crash) => o Node morre também** (`child.on('close')` -> exit).
+  - **Keep-alive** (timer 1h com unref neutralizado + stdin.resume) impede o Node fechar
+    sozinho no MobaXterm (mantido como rede de segurança).
+  - Removidos: daemon/PID/`commandStop`/rota `stop`/script `npm run stop`/`daemonPython`.
+- `package.json`: remove o script `stop`; bump 0.1.39 → 0.1.40. `app/main.py` + CHANGELOG.
+
 ## 0.1.39 — 2026-11-07
 
 - **HOTFIX CRÍTICO — SEM janela preta de CMD no daemon (Windows).**

@@ -28,7 +28,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.39";
+const APP_VERSION = "0.1.40";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -81,7 +81,7 @@ process.on("beforeExit", (code) => {
 process.on("exit", (code) => {
   // O terminal NUNCA fecha sem imprimir o motivo. Ctrl+C (matarAgora→controlledStop)
   // tem uma linha breve; qualquer OUTRA saída mostra o código (a pista da morte).
-  const m = controlledStop ? "[LAUNCHER] Launcher encerrado (servidor segue rodando em background)." : `[LAUNCHER] O Node está encerrando. Código: ${code}`;
+  const m = controlledStop ? "[LAUNCHER] Encerrado - servidor finalizado junto com o terminal." : `[LAUNCHER] O Node está encerrando. Código: ${code}`;
   launcherDbg(m);
   console.error(`\n${m}`);
 });
@@ -134,17 +134,6 @@ function venvPython(home) {
   const exe = process.platform === "win32" ? "Scripts\\python.exe" : "bin/python";
   const candidate = path.join(home, "venv", ...exe.split(/[\\/]/));
   return fs.existsSync(candidate) ? candidate : null;
-}
-
-// DAEMON no Windows: prefira pythonw.exe (subsistema GUI). Ele NUNCA aloca console,
-// então NÃO abre a janela preta de CMD — o windowsHide sozinho não bastava com
-// `detached` em alguns Windows. Fallback: o próprio python.exe (se não houver pythonw).
-function daemonPython(py) {
-  if (process.platform === "win32" && typeof py === "string" && py.toLowerCase().endsWith("python.exe")) {
-    const pyw = py.slice(0, py.length - "python.exe".length) + "pythonw.exe";
-    if (fs.existsSync(pyw)) return pyw;
-  }
-  return py;
 }
 
 function printUrlBox(port, masterCode) {
@@ -468,64 +457,64 @@ async function commandRun() {
   // atrasando os logs no proxy/MobaXterm. unbuffered = logs em tempo real.
   const env = { ...process.env, PRODMAKER_HOME: home, PRODMAKER_PORT: String(port), PYTHONUNBUFFERED: "1" };
 
-  // MODELO DAEMON — ISOLAMENTO TOTAL (o MobaXterm não consegue mais matar o servidor).
-  // O Python sobe DETACHED, windowsHide e stdio 'ignore' (não depende do terminal);
-  // o Node só ORQUESTRA: sobe -> confirma que está ouvindo -> salva o PID em
-  // storage/python.pid -> sai 0. Para encerrar: `prodmaker stop`. Logs: storage/logs/app.log.
-  const pidFile = storagePath(home, "python.pid");
-  if (fs.existsSync(pidFile)) {
-    try {
-      const oldPid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
-      process.kill(oldPid, 0); // sinal 0 = só testa existência (não mata)
-      console.log(`Um servidor já está rodando (PID ${oldPid}) em http://localhost:${preferred}.`);
-      console.log("Use 'prodmaker stop' para encerrá-lo antes de iniciar outro.");
-      process.exit(0);
-    } catch {} // PID morto/arquivo velho — sobrescreve
-  }
-  console.log("Aguardando o servidor ficar pronto...");
-
-  const child = spawn(daemonPython(python), pythonArgs, {
+  // MODELO ATRELADO AO TERMINAL - fechou o terminal, o servidor morre junto.
+  // Filho NAO-detached + console-attached (python.exe): fechar o terminal (CTRL_CLOSE/pty)
+  // derruba o grupo do console; e o Node captura SIGHUP/SIGTERM/SIGINT e mata o filho.
+  // Sem processo fantasma/orfao. keep-alive (timer 1h + stdin) impede fechar sozinho.
+  let keepAlive = null;
+  const child = spawn(python, pythonArgs, {
     cwd: PKG_ROOT,
-    detached: true, // grupo de processos próprio: sobrevive ao terminal do MobaXterm
-    windowsHide: true, // NUNCA abre a janela preta de CMD
-    stdio: "ignore", // o daemon não depende de stdout/stderr do terminal
+    stdio: "inherit", // usa o console do terminal (compartilhado; sem janela extra de CMD)
     env,
     shell: false,
+    windowsHide: true,
   });
-  child.unref(); // destaca o filho: o Node pode sair sem derrubar o servidor
-  try {
-    fs.mkdirSync(path.dirname(pidFile), { recursive: true });
-    fs.writeFileSync(pidFile, String(child.pid));
-    launcherDbg(`[RUN] DAEMON ${path.basename(daemonPython(python))} iniciado pid ${child.pid} port ${port}; pid em ${pidFile}`);
-  } catch (err) {
-    launcherDbg(`[RUN] falha ao salvar pid: ${err}`);
-  }
-  child.on("error", (error) => {
-    console.error(`Falha ao iniciar o Python: ${error.message}`);
-  });
+  launcherDbg(`[RUN] servidor acoplado ao terminal: pid=${child.pid} port=${port}`);
 
-  // (Handlers de sinal do launcher removidos: o servidor agora é um DAEMON isolado
-  // e o launcher encerra após iniciá-lo. Para parar o servidor: `prodmaker stop`.)
+  const killChild = () => {
+    try {
+      if (child.pid && process.platform === "win32") {
+        spawnSync("taskkill", ["/F", "/T", "/PID", String(child.pid)], { stdio: "ignore", shell: false, windowsHide: true });
+      } else if (child.pid) {
+        child.kill("SIGKILL");
+      }
+    } catch {}
+  };
+  process.on("exit", killChild); // QUALQUER saida do Node mata o filho (sem orfao)
 
-  // Sem heartbeat no terminal: após subir, o terminal fica ESTÁTICO (nenhuma
-  // mensagem periódica). O monitoramento de vida já existe — silencioso — em
-  // storage/logs/app.log (uvicorn registra cada requisição e o ciclo de vida
-  // do servidor).
+  const matarAgora = (code) => {
+    controlledStop = true;
+    if (keepAlive) clearInterval(keepAlive);
+    killChild();
+    launcherDbg(`[STOP] matarAgora(code=${code ?? 0}) - filho morto; terminal liberado.`);
+    process.exit(code ?? 0);
+  };
+  // Ctrl+C e fechamento do terminal (SIGHUP/SIGTERM do MobaXterm) => encerra casado.
+  process.on("SIGINT", () => { launcherDbg("[SIGNAL] SIGINT (Ctrl+C)"); matarAgora(0); });
+  process.on("SIGTERM", () => { launcherDbg("[SIGNAL] SIGTERM (fechando)"); matarAgora(0); });
+  process.on("SIGHUP", () => { launcherDbg("[SIGNAL] SIGHUP (terminal fechando?)"); matarAgora(0); });
 
+  child.on("error", (error) => console.error(`Falha ao iniciar o Python: ${error.message}`));
+  // Filho morreu (crash) => o Node morre tambem (nada fica rodando sozinho).
+  child.on("close", (code) => { launcherDbg(`[CHILD] Python encerrou (code ${code ?? "0"}).`); process.exit(code ?? 0); });
+
+  console.log("Aguardando o servidor ficar pronto...");
   const pronto = await waitReady(port);
   printUrlBox(port, masterCode);
   if (pronto) {
-    launcherDbg(`[RUN] daemon (pid ${child.pid}) pronto na porta ${port}.`);
-    console.log("Servidor rodando em BACKGROUND - processo ISOLADO (o MobaXterm nao o derruba).");
-    console.log(`PID ${child.pid} salvo em ${pidFile}`);
-    console.log(`URL: http://localhost:${port}  -  o terminal pode voltar ao prompt; o servidor continua no ar.`);
-    console.log("Para encerrar o servidor:  prodmaker stop   (ou: npm run stop)");
+    console.log("Servidor acoplado a este terminal. Mantenha a janela ABERTA; fechar ou CTRL+C encerra o servidor.");
+    console.log("URL: http://localhost:" + port);
   } else {
     console.error("O servidor nao respondeu em 30s. Veja storage/logs/app.log (ou rode o comando debug).");
-    console.error(`PID do daemon: ${child.pid} - use \'prodmaker stop\' para encerrar.`);
   }
-  controlledStop = true; // saida intencional do launcher (deixa o daemon rodando)
-  process.exit(0);
+
+  // TRAVA ANTI-FECHAMENTO-ESPONTANEO: timer de 1h (unref neutralizado) + stdin.resume
+  // mantem o Node VIVO enquanto o filho/terminal existirem. A saida acontece so por
+  // sinal ou fim-do-filho - e todos matam o filho.
+  keepAlive = setInterval(() => {}, 60 * 60 * 1000);
+  if (keepAlive && typeof keepAlive.unref === "function") keepAlive.unref = function () { return this; };
+  if (process.stdin && process.stdin.resume) process.stdin.resume();
+  await new Promise(() => {}); // segura o Node neste comando ate um sinal ou o fim do filho
 }
 
 async function commandDoctor() {
@@ -550,49 +539,15 @@ async function commandDoctor() {
   console.log(`Porta ${DEFAULT_PORT}: ${port === DEFAULT_PORT ? "livre" : "ocupada"}`);
 }
 
-async function commandStop() {
-  controlledStop = true; // encerramento normal do comando (sem mensagem de "morte")
-  const home = resolveHome();
-  const pidFile = storagePath(home, "python.pid");
-  if (!fs.existsSync(pidFile)) {
-    console.log(`Nenhum servidor para encerrar (não há ${pidFile}).`);
-    return;
-  }
-  let pid = 0;
-  try {
-    pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
-  } catch {}
-  try {
-    fs.unlinkSync(pidFile);
-  } catch {}
-  if (!pid) {
-    console.log("PID inválido em python.pid.");
-    return;
-  }
-  if (process.platform === "win32") {
-    const r = spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], { stdio: "ignore", shell: false, windowsHide: true });
-    if (r.status === 0) console.log(`Servidor encerrado (PID ${pid}).`);
-    else console.log(`O processo ${pid} não estava rodando (ou já havia sido encerrado).`);
-  } else {
-    try {
-      process.kill(pid, "SIGKILL");
-      console.log(`Servidor encerrado (PID ${pid}).`);
-    } catch {
-      console.log(`O processo ${pid} não estava rodando (ou já havia sido encerrado).`);
-    }
-  }
-}
-
 async function main() {
   const command = process.argv[2] || "run";
   const flags = {
     skipPythonDeps: process.argv.includes("--skip-python-deps"),
   };
   if (command === "install") return commandInstall(flags);
-  if (command === "stop") return commandStop();
   if (command === "doctor") return commandDoctor();
   if (command === "run" || command === "start") return commandRun();
-  console.log("Uso: prodmaker [install|run|stop|doctor] [--skip-python-deps]");
+  console.log("Uso: prodmaker [install|run|doctor] [--skip-python-deps]");
 }
 
 main().catch((error) => {
