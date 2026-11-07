@@ -3,6 +3,21 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.41 — 2026-11-07
+
+- **HOTFIX — login com código mestre (1234/admin) não avançava para o painel.**
+- Causa raiz (frontend): `Login.jsx` chamava `api.login()` direto e depois `navigate("/")`,
+  **sem atualizar a sessão do `App`** — o `session` ficava obsoleto (`authenticated:false`
+  vindo do fetch inicial em `/login`) e o `App` redirecionava de volta a `/login` (a tela
+  "não avança"). O backend estava correto (`POST /api/auth/login` => 200 + cookie, e
+  `read_token`/`auth_session` validavam o cookie).
+- Fix: `Login.jsx` passa a usar o `login()` do contexto (o `login` do `App` faz
+  `api.login` **+ `refreshSession`**), então o `App` já fica autenticado antes do redirect.
+- `frontend/dist` rebuildado (bundle com o fix). Bump 0.1.40 → 0.1.41 (package.json, cli.mjs,
+  app/main.py + canonical) + CHANGELOG.
+- Testado (E2E no browser): login => avança para "/", `session.authenticated=true` com
+  `role=admin`, sem erros no console.
+
 ## 0.1.40 — 2026-11-07
 
 - **HOTFIX — morte casada: fechar o terminal derruba o servidor (sem processo fantasma).**

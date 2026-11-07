@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { useApp } from "../App";
 import { supabase } from "../supabase";
 
 const STEPS = [
@@ -18,6 +19,7 @@ const LANGUAGES = [
 
 export default function Login() {
   const navigate = useNavigate();
+  const { login } = useApp();
   const [config, setConfig] = useState(null);
   const [mode, setMode] = useState("signin"); // signin | signup
   const [email, setEmail] = useState("");
@@ -52,7 +54,10 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await api.login(email, devCode);
+      // Usa o login() do contexto (App): faz api.login E refreshSession, então o
+      // App já fica autenticado (session.authenticated=true) antes do redirect —
+      // chamar api.login direto deixava o session obsoleto e voltava p/ /login.
+      await login(email, devCode);
       navigate("/", { replace: true });
     } catch (err) {
       setError(err.message || "Não foi possível entrar. Verifique o e-mail e o código de ativação.");
