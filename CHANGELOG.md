@@ -3,6 +3,18 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.39 — 2026-11-07
+
+- **HOTFIX CRÍTICO — SEM janela preta de CMD no daemon (Windows).**
+- Regressão da 0.1.38: `detached: true` reabriu a janela do CMD — `python.exe` é
+  aplicativo de CONSOLE e o `windowsHide` sozinho não bastava com `detached` em alguns
+  Windows (o sistema alocava um console novo para o filho).
+- Fix DEFINITIVO: o daemon agora usa **`pythonw.exe`** (subsistema *GUI*), que **nunca**
+  aloca console/janela — independente de flags. `daemonPython(py)` escolhe o `pythonw.exe`
+  ao lado do `python.exe` do venv (fallback: `python.exe`). Mantidos `detached:true`,
+  `windowsHide:true`, `stdio:'ignore'`, `child.unref()`.
+- Bump 0.1.38 → 0.1.39 (package.json, cli.mjs, app/main.py + canonical) + CHANGELOG.
+
 ## 0.1.38 — 2026-11-07
 
 - **MUDANÇA DE ARQUITETURA — servidor como DAEMON ISOLADO (o MobaXterm não o mata mais).**

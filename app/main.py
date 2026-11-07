@@ -32,7 +32,7 @@ from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, ge
 shutdown.instalar()
 configure_logging()
 
-APP_VERSION = "0.1.38"
+APP_VERSION = "0.1.39"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -334,7 +334,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.38"}
+    return {"version": APP_VERSION, "canonical": "0.1.39"}
 
 
 @app.get("/api/settings")

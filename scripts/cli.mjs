@@ -28,7 +28,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.38";
+const APP_VERSION = "0.1.39";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -134,6 +134,17 @@ function venvPython(home) {
   const exe = process.platform === "win32" ? "Scripts\\python.exe" : "bin/python";
   const candidate = path.join(home, "venv", ...exe.split(/[\\/]/));
   return fs.existsSync(candidate) ? candidate : null;
+}
+
+// DAEMON no Windows: prefira pythonw.exe (subsistema GUI). Ele NUNCA aloca console,
+// então NÃO abre a janela preta de CMD — o windowsHide sozinho não bastava com
+// `detached` em alguns Windows. Fallback: o próprio python.exe (se não houver pythonw).
+function daemonPython(py) {
+  if (process.platform === "win32" && typeof py === "string" && py.toLowerCase().endsWith("python.exe")) {
+    const pyw = py.slice(0, py.length - "python.exe".length) + "pythonw.exe";
+    if (fs.existsSync(pyw)) return pyw;
+  }
+  return py;
 }
 
 function printUrlBox(port, masterCode) {
@@ -473,7 +484,7 @@ async function commandRun() {
   }
   console.log("Aguardando o servidor ficar pronto...");
 
-  const child = spawn(python, pythonArgs, {
+  const child = spawn(daemonPython(python), pythonArgs, {
     cwd: PKG_ROOT,
     detached: true, // grupo de processos próprio: sobrevive ao terminal do MobaXterm
     windowsHide: true, // NUNCA abre a janela preta de CMD
@@ -485,7 +496,7 @@ async function commandRun() {
   try {
     fs.mkdirSync(path.dirname(pidFile), { recursive: true });
     fs.writeFileSync(pidFile, String(child.pid));
-    launcherDbg(`[RUN] Python DAEMON iniciado (pid ${child.pid}) port ${port}; pid salvo em ${pidFile}`);
+    launcherDbg(`[RUN] DAEMON ${path.basename(daemonPython(python))} iniciado pid ${child.pid} port ${port}; pid em ${pidFile}`);
   } catch (err) {
     launcherDbg(`[RUN] falha ao salvar pid: ${err}`);
   }
