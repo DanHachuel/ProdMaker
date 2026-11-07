@@ -3,6 +3,25 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.38 — 2026-11-07
+
+- **MUDANÇA DE ARQUITETURA — servidor como DAEMON ISOLADO (o MobaXterm não o mata mais).**
+- Diagnóstico: manter o Node "vivo" no terminal do MobaXterm era insustentável (loop
+  esvaziando e/ou hard-kill quando ocioso). Solução definitiva: isolar o servidor do
+  terminal, como o AdsX faz.
+- `scripts/cli.mjs` (`commandRun`):
+  - O Python sobe **DETACHED** (grupo de processos próprio) + **`windowsHide: true`**
+    (sem janela de CMD) + **`stdio: 'ignore'`** (não depende do terminal) + `child.unref()`.
+  - O Node só ORQUESTRA: sobe → espera `/api/health` responder → imprime o box → **salva
+    o PID em `storage/python.pid`** → `process.exit(0)`. O terminal volta ao prompt e o
+    **servidor continua em `http://localhost:8188`** (o MobaXterm não o derruba).
+  - Removidos: supervisor/restart, proxy de logs, keep-alive e handlers de sinal do launcher.
+  - **`commandStop` (novo):** `prodmaker stop` / `npm run stop` lê `storage/python.pid` e roda
+    `taskkill /F /T /PID` (Windows) ou `kill -9` (Unix); remove o arquivo de PID.
+  - Logs do servidor ficam em `storage/logs/app.log` (stdio do daemon é `ignore`).
+- `package.json`: + script **`stop`**; bump 0.1.37 → 0.1.38. `app/main.py` APP_VERSION + canonical.
+- Testado: `node --check` ok.
+
 ## 0.1.37 — 2026-11-06
 
 - **HOTFIX DEFINITIVO — event loop NÃO esvazia mais: o terminal trava no box (não volta ao prompt).**
