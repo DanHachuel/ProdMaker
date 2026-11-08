@@ -3,6 +3,25 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.42 — 2026-11-08
+
+- **HOTFIX — launcher robusto no MobaXterm: death hooks + limpeza de porta + readline + auto-restart.**
+- `scripts/cli.mjs` (`commandRun`):
+  1. **Hooks de morte VISÍVEIS no terminal:** `process.on('exit'|'uncaughtException'|'unhandledRejection')`
+     e `child.on('exit')` imprimem o motivo (`[LAUNCHER] O Node está encerrando. Código: X`,
+     `[PYTHON MORREU] Codigo/Sinal: …`) antes de fechar.
+  2. **`killPortProcess(port)`:** mata qualquer processo fantasma escutando na porta antes de subir (Windows).
+  3. **`readline`** (`createInterface` no `stdin`) segura o Node — só fecha quando o terminal fecha
+     (`rl.on('close')` → `matarAgora`); guard `isTTY` evita saída falsa em pipe/redirect; timer 1h
+     (`unref` neutralizado) como rede de segurança.
+  4. **Auto-restart:** se o Python cair, o Node o reinicia (até 3×, backoff 2s) em vez de morrer; só
+     encerra após 3 falhas (com o traceback apontando para `npm run debug`/`storage/logs/app.log`).
+  - Mantidos: filho console-attached (morte casada), `exit`→`killChild` (sem órfão),
+    `SIGINT`/`SIGHUP`/`SIGTERM`→`matarAgora`.
+- Bump 0.1.41 → 0.1.42 (package.json, cli.mjs, app/main.py + canonical) + CHANGELOG.
+- Testado: boot => Node vivo + filho servindo (health 200); matar o filho => Node **reinicia**
+  (novo filho + 200) e imprime `[PYTHON MORREU]`.
+
 ## 0.1.41 — 2026-11-07
 
 - **HOTFIX — login com código mestre (1234/admin) não avançava para o painel.**

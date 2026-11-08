@@ -3,6 +3,7 @@
  * REGRA ZERO: este launcher NUNCA abre o navegador. Apenas imprime a URL.
  */
 import { spawn as nodeSpawn, spawnSync } from "node:child_process";
+import readline from "node:readline";
 import { createRequire } from "node:module";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -28,7 +29,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.41";
+const APP_VERSION = "0.1.42";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -136,6 +137,22 @@ function venvPython(home) {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
+// Mata qualquer processo escutando na porta (Windows) antes de subir — evita que
+// um Python fantasma de execucao anterior ocupe a porta e derrube o novo.
+function killPortProcess(port) {
+  if (process.platform !== "win32") return;
+  try {
+    const res = spawnSync("cmd", ["/c", "netstat -ano | findstr :" + port + " | findstr LISTENING"], { encoding: "utf8", windowsHide: true });
+    const pids = new Set();
+    for (const line of (res.stdout || "").split(/\r?\n/)) {
+      const m = line.match(/(\d+)\s*$/);
+      if (m) pids.add(m[1]);
+    }
+    for (const pid of pids) {
+      try { spawnSync("taskkill", ["/F", "/PID", pid], { stdio: "ignore", windowsHide: true }); } catch {}
+    }
+  } catch {}
+}
 function printUrlBox(port, masterCode) {
   const url = `http://localhost:${port}`;
   const line = (text) => `|  ${text}${" ".repeat(Math.max(0, 43 - text.length))}|`;
@@ -457,46 +474,74 @@ async function commandRun() {
   // atrasando os logs no proxy/MobaXterm. unbuffered = logs em tempo real.
   const env = { ...process.env, PRODMAKER_HOME: home, PRODMAKER_PORT: String(port), PYTHONUNBUFFERED: "1" };
 
-  // MODELO ATRELADO AO TERMINAL - fechou o terminal, o servidor morre junto.
-  // Filho NAO-detached + console-attached (python.exe): fechar o terminal (CTRL_CLOSE/pty)
-  // derruba o grupo do console; e o Node captura SIGHUP/SIGTERM/SIGINT e mata o filho.
-  // Sem processo fantasma/orfao. keep-alive (timer 1h + stdin) impede fechar sozinho.
-  let keepAlive = null;
-  const child = spawn(python, pythonArgs, {
-    cwd: PKG_ROOT,
-    stdio: "inherit", // usa o console do terminal (compartilhado; sem janela extra de CMD)
-    env,
-    shell: false,
-    windowsHide: true,
-  });
-  launcherDbg(`[RUN] servidor acoplado ao terminal: pid=${child.pid} port=${port}`);
+  // MODELO ATRELADO AO TERMINAL + auto-restart + readline (morte casada, sem orfao).
+  // 1) limpa fantasmas na porta  2) sobe o Python  3) reinicia se cair (ate 3x)
+  // 4) mantem o Node vivo via readline (so fecha quando o terminal fecha).
+  killPortProcess(port);
+
+  let stopping = false;
+  let keepAliveTimer = null;
+  let restarts = 0;
+  let child = null;
+  const MAX_RESTARTS = 3;
+
+  const startPython = () => {
+    child = spawn(python, pythonArgs, {
+      cwd: PKG_ROOT,
+      stdio: "inherit",
+      env,
+      shell: false,
+      windowsHide: true,
+    });
+    launcherDbg(`[RUN] spawn python pid=${child.pid} port ${port} (t=${restarts + 1})`);
+
+    child.on("error", (error) => console.error(`[ERRO FATAL] falha ao iniciar o Python: ${error.message}`));
+
+    // HOOK visivel no terminal: por que o Python morreu.
+    child.on("exit", (code, signal) => {
+      console.log(`\n[PYTHON MORREU] Codigo: ${code ?? "null"}, Sinal: ${signal ?? "null"} — ${path.join(home, "storage", "logs", "app.log")}`);
+      launcherDbg(`[CHILD] python exit code=${code ?? "null"} signal=${signal ?? "null"}`);
+    });
+
+    child.on("close", (code) => {
+      if (stopping) return;
+      if (restarts < MAX_RESTARTS) {
+        restarts += 1;
+        console.error(`[ProdMaker] Python caiu (codigo ${code ?? 0}). Reiniciando (tentativa ${restarts} de ${MAX_RESTARTS})...`);
+        launcherDbg(`[RESTART] tentativa ${restarts} de ${MAX_RESTARTS}`);
+        setTimeout(startPython, 2000);
+        return;
+      }
+      console.error(`[ProdMaker] Python falhou ${MAX_RESTARTS} vezes. Encerrando — rode npm run debug para o traceback.`);
+      process.exit(1);
+    });
+  };
 
   const killChild = () => {
     try {
-      if (child.pid && process.platform === "win32") {
+      if (child && child.pid && process.platform === "win32") {
         spawnSync("taskkill", ["/F", "/T", "/PID", String(child.pid)], { stdio: "ignore", shell: false, windowsHide: true });
-      } else if (child.pid) {
+      } else if (child && child.pid) {
         child.kill("SIGKILL");
       }
     } catch {}
   };
-  process.on("exit", killChild); // QUALQUER saida do Node mata o filho (sem orfao)
+  process.on("exit", killChild); // qualquer saida do Node mata o filho (sem orfao)
 
   const matarAgora = (code) => {
+    stopping = true;
     controlledStop = true;
-    if (keepAlive) clearInterval(keepAlive);
+    if (keepAliveTimer) clearInterval(keepAliveTimer);
     killChild();
-    launcherDbg(`[STOP] matarAgora(code=${code ?? 0}) - filho morto; terminal liberado.`);
+    launcherDbg(`[STOP] matarAgora(${code ?? 0})`);
     process.exit(code ?? 0);
   };
   // Ctrl+C e fechamento do terminal (SIGHUP/SIGTERM do MobaXterm) => encerra casado.
   process.on("SIGINT", () => { launcherDbg("[SIGNAL] SIGINT (Ctrl+C)"); matarAgora(0); });
-  process.on("SIGTERM", () => { launcherDbg("[SIGNAL] SIGTERM (fechando)"); matarAgora(0); });
+  process.on("SIGTERM", () => { launcherDbg("[SIGNAL] SIGTERM"); matarAgora(0); });
   process.on("SIGHUP", () => { launcherDbg("[SIGNAL] SIGHUP (terminal fechando?)"); matarAgora(0); });
 
-  child.on("error", (error) => console.error(`Falha ao iniciar o Python: ${error.message}`));
-  // Filho morreu (crash) => o Node morre tambem (nada fica rodando sozinho).
-  child.on("close", (code) => { launcherDbg(`[CHILD] Python encerrou (code ${code ?? "0"}).`); process.exit(code ?? 0); });
+  startPython();
 
   console.log("Aguardando o servidor ficar pronto...");
   const pronto = await waitReady(port);
@@ -505,16 +550,20 @@ async function commandRun() {
     console.log("Servidor acoplado a este terminal. Mantenha a janela ABERTA; fechar ou CTRL+C encerra o servidor.");
     console.log("URL: http://localhost:" + port);
   } else {
-    console.error("O servidor nao respondeu em 30s. Veja storage/logs/app.log (ou rode o comando debug).");
+    console.error("O servidor nao respondeu em 30s. Veja storage/logs/app.log.");
   }
 
-  // TRAVA ANTI-FECHAMENTO-ESPONTANEO: timer de 1h (unref neutralizado) + stdin.resume
-  // mantem o Node VIVO enquanto o filho/terminal existirem. A saida acontece so por
-  // sinal ou fim-do-filho - e todos matam o filho.
-  keepAlive = setInterval(() => {}, 60 * 60 * 1000);
-  if (keepAlive && typeof keepAlive.unref === "function") keepAlive.unref = function () { return this; };
-  if (process.stdin && process.stdin.resume) process.stdin.resume();
-  await new Promise(() => {}); // segura o Node neste comando ate um sinal ou o fim do filho
+  // MANTEM O NODE VIVO: readline segura o terminal (só fecha quando o terminal fecha)
+  // + timer de 1h com unref neutralizado (rede). Em stdin nao-tty (pipe/redirect) o
+  // EOF e imediato — aí NAO tratamos close (evita saida falsa); o timer mantem no ar.
+  keepAliveTimer = setInterval(() => {}, 60 * 60 * 1000);
+  if (keepAliveTimer && typeof keepAliveTimer.unref === "function") keepAliveTimer.unref = function () { return this; };
+  const rl = readline.createInterface({ input: process.stdin, terminal: Boolean(process.stdin && process.stdin.isTTY) });
+  rl.on("close", () => {
+    launcherDbg("[READLINE] interface fechada (terminal fechou?)");
+    if (process.stdin && process.stdin.isTTY) matarAgora(0); // so em TTY real (nunca em pipe/EOF falso)
+  });
+  await new Promise(() => {}); // segura o comando ate sinal/fechamento/fim do filho
 }
 
 async function commandDoctor() {
