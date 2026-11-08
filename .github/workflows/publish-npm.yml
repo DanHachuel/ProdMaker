@@ -70,6 +70,12 @@ jobs:
           npm ci
           npm test
 
+      # REGRA INVIOLÁVEL (AGENTS.md): keep-alive, absorção de sinais no Windows,
+      # guarda anti-EPIPE e isolamento de processos. Se qualquer proteção for
+      # removida, o job ABORTA e o npm NÃO é publicado.
+      - name: Launcher architecture guard (anti-morte-espontânea)
+        run: python3 tests/test_launcher_keepalive.py
+
       - name: Publish to npm
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:

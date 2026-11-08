@@ -16,6 +16,22 @@ imprime no terminal já existente (MobaXterm/CMD); o usuário nunca pode ver uma
 janela preta piscar ao iniciar/rodar. Violação = bug crítico, corrigir antes de
 qualquer publicação.
 
+## 🚨 REGRA INVIOLÁVEL: ARQUITETURA DO LAUNCHER (WINDOWS/MOBAXTERM)
+O launcher (`scripts/cli.mjs`) NÃO pode morrer sozinho. O MobaXterm envia sinais
+espúrios (SIGINT/SIGHUP) quando a janela perde o foco ou é minimizada, e escrever
+em console fechado gera EPIPE — ambos já derrubaram o app sem motivo. Por isso:
+1. **Keep-Alive:** o launcher DEVE usar `setInterval(() => {}, 1000)` para se
+   manter vivo no MobaXterm (Event Loop nunca esvazia).
+2. **Absorção de Sinais:** os sinais `SIGINT` e `SIGHUP` DEVEM ser ignorados no
+   Windows (apenas logar). O encerramento real é via comando `prodmaker stop`,
+   fechamento da janela ou `taskkill`. Em Linux/macOS, CTRL+C encerra normal.
+3. **Guarda da Consola:** a função `guardConsoleStream` NUNCA deve ser removida
+   (absorve EPIPE e espelha os logs em `storage/logs/launcher_console.log`).
+4. **Isolamento de Workers:** processos filhos DEVEM ser iniciados com
+   `CREATE_NEW_PROCESS_GROUP` (0x00000200) — não herdam os sinais do terminal.
+5. **Trava de regressão:** `tests/test_launcher_keepalive.py` falha se qualquer
+   uma das proteções acima for removida; rodar antes de publicar (CI).
+
 ## Versionamento NPM
 Convenção visual MAJOR.MINOR.PATCH com dois dígitos no PATCH. Patch 99 → MINOR+1
 e PATCH 00; MINOR 9 → MAJOR+1. Exemplos: 0.3.99 → 0.4.00; 0.9.99 → 1.0.00 (nunca

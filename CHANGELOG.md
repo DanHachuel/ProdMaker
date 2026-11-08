@@ -3,6 +3,38 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.46 — 2026-11-08
+
+- **HOTFIX CRÍTICO — o app NÃO morre mais sozinho no MobaXterm/Windows.**
+- **Causa raiz:** o launcher tratava `SIGINT` como "encerrar" — o MobaXterm
+  envia `SIGINT`/`SIGHUP` espúrios quando a janela perde o foco ou é
+  minimizada, e qualquer um deles derrubava a stack inteira.
+- **As 4 correções em `scripts/cli.mjs`:**
+  1. **Keep-alive:** `setInterval(() => {}, 1000)` — o Event Loop do Node nunca
+     esvazia, independentemente do console (substitui o timer de 1h).
+  2. **Absorção de sinais:** no Windows, `SIGINT` e `SIGHUP` agora são
+     **absorvidos** (apenas log em `launcher-debug.log`) — perder o foco ou
+     minimizar **não** derruba nada. Em Linux/macOS, CTRL+C encerra normalmente.
+  3. **Guarda da consola (anti-EPIPE):** `guardConsoleStream(process.stdout/
+     stderr)` — absorve erro de escrita em console fechado e espelha TUDO em
+     `storage/logs/launcher_console.log`. Escrever em terminal morto não mata
+     mais o processo.
+  4. **Isolamento de workers:** o Python sobe com `creationFlags:
+     CREATE_NEW_PROCESS_GROUP (0x00000200)` explícito — filhos não herdam os
+     sinais do terminal.
+- **Novo comando `prodmaker stop`** (o encerramento real no Windows): mata o
+  launcher pelo PID file (`storage/state/launcher.pid`) e o servidor Python pela
+  porta. Mensagens de boot atualizadas explicam que CTRL+C não encerra no
+  Windows e apontam o `stop`.
+- **Regra inviolável no `AGENTS.md`** (arquitetura do launcher) + **teste de CI**
+  `tests/test_launcher_keepalive.py` (3 verificações) e novo passo
+  **"Launcher architecture guard"** no workflow — se qualquer proteção for
+  removida, o job aborta e o npm NÃO publica.
+- Testado ponta a ponta: start → health OK → 20s de sobra (keep-alive) →
+  `prodmaker stop` encerra launcher E servidor (porta liberada) → doctor OK;
+  trava validada por prova de fogo (keep-alive quebrado ⇒ 2/3, exit 1).
+- Bump: `0.1.46` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.45 — 2026-11-08
 
 - **ENCERRAMENTO — teste anti-tela-preta agora roda no CI (porta obrigatória antes

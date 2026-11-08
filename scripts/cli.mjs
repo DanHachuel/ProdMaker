@@ -29,7 +29,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.45";
+const APP_VERSION = "0.1.46";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -72,6 +72,44 @@ try {
 // Encerramento CONTROLADO (Ctrl+C → matarAgora) seta esta flag; aí a mensagem de
 // morte NÃO é impressa (Ctrl+C continua limpo). Em qualquer OUTRA saída, o MOTIVO é
 // cuspido no TERMINAL — o terminal não pode fechar sem antes dizer por quê.
+// ---------------------------------------------------------------------------
+// GUARDA DA CONSOLA (anti-EPIPE) — NUNCA REMOVER (regra inviolável do launcher).
+// Quando o terminal (MobaXterm/CMD) é fechado, escrever em stdout/stderr morto
+// gera erro EPIPE: sem listener de 'error' o evento sobe como exceção não
+// tratada e DERRUBA o launcher no meio da aplicação. A guarda (a) absorve o
+// erro do stream e (b) espelha TUDO em storage/logs/launcher_console.log — o
+// terminal pode morrer, os logs continuam.
+// ---------------------------------------------------------------------------
+const CONSOLE_MIRROR = path.join(resolveHome(), "storage", "logs", "launcher_console.log");
+let consoleMirror = null;
+try {
+  fs.mkdirSync(path.dirname(CONSOLE_MIRROR), { recursive: true });
+  consoleMirror = fs.createWriteStream(CONSOLE_MIRROR, { flags: "a" });
+} catch {
+  consoleMirror = null;
+}
+
+function guardConsoleStream(stream) {
+  const nome = stream === process.stdout ? "stdout" : "stderr";
+  // Sem este listener, EPIPE em console fechado = uncaughtException = morte.
+  stream.on("error", (err) => {
+    launcherDbg(`[CONSOLE] erro de escrita em ${nome}: ${err && err.code ? err.code : err} — absorvido (logs seguem em ${CONSOLE_MIRROR})`);
+  });
+  const originalWrite = stream.write.bind(stream);
+  stream.write = (chunk, encoding, callback) => {
+    try {
+      if (consoleMirror) consoleMirror.write(chunk);
+    } catch {}
+    try {
+      return originalWrite(chunk, encoding, callback);
+    } catch {
+      return true; // console morto NUNCA derruba o launcher
+    }
+  };
+}
+guardConsoleStream(process.stdout);
+guardConsoleStream(process.stderr);
+
 let controlledStop = false;
 
 // beforeExit = o event loop ESVASIOU. No modelo daemon, `run` sai via process.exit
@@ -137,6 +175,21 @@ function venvPython(home) {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
+// Quantos processos escutam na porta (Windows) — o `stop` usa para reportar.
+function portListeners(port) {
+  if (process.platform !== "win32") return 0;
+  try {
+    const res = spawnSync("cmd", ["/c", "netstat -ano | findstr :" + port + " | findstr LISTENING"], { encoding: "utf8", windowsHide: true });
+    const pids = new Set();
+    for (const line of (res.stdout || "").split(/\r?\n/)) {
+      const m = line.match(/(\d+)\s*$/);
+      if (m) pids.add(m[1]);
+    }
+    return pids.size;
+  } catch {
+    return 0;
+  }
+}
 // Mata qualquer processo escutando na porta (Windows) antes de subir — evita que
 // um Python fantasma de execucao anterior ocupe a porta e derrube o novo.
 function killPortProcess(port) {
@@ -486,10 +539,11 @@ async function commandRun() {
   // ISOLAMENTO DO GRUPO DE PROCESSOS — fix do STATUS_CONTROL_C_EXIT (0xC000013A).
   // O MobaXterm envia CTRL_C_EVENT ao grupo do console; se o Python estiver no MESMO
   // grupo, ele morre junto. Solucao: o Python sobe em grupo PROPRIO
-  // (detached+windowsHide = CREATE_NEW_PROCESS_GROUP + CREATE_NO_WINDOW) + pythonw (sem
-  // janela). O Node (launcher) media: fica vivo (readline), IGNORA SIGHUP (perda de foco),
-  // e no CTRL+C real (SIGINT) mata o Python via taskkill. O Python tambem ignora Ctrl via
+  // (CREATE_NEW_PROCESS_GROUP explicito + detached + pythonw sem janela). O Node
+  // (launcher) medeia: fica vivo (keep-alive 1s + readline), ABSORVE SIGINT/SIGHUP
+  // no Windows (ver absorcao de sinais acima) e o Python tambem ignora Ctrl via
   // SetConsoleCtrlHandler (app/main.py).
+  const CREATE_NEW_PROCESS_GROUP = 0x00000200; // flag Win32 — filhos NAO herdem os sinais do terminal
   killPortProcess(port);
 
   let stopping = false;
@@ -502,6 +556,7 @@ async function commandRun() {
     child = spawn(daemonPython(python), pythonArgs, {
       cwd: PKG_ROOT,
       detached: true, // grupo PROPRIO: imune ao CTRL_C_EVENT do console (0xC000013A)
+      creationFlags: CREATE_NEW_PROCESS_GROUP, // 0x00000200 — filhos NAO herdem sinais do terminal
       windowsHide: true, // CREATE_NO_WINDOW: nunca abre janela de CMD
       stdio: ["inherit", "pipe", "pipe"], // logs passam pelo proxy do Node pro terminal atual
       env,
@@ -548,12 +603,38 @@ async function commandRun() {
     launcherDbg(`[STOP] matarAgora(${code ?? 0})`);
     process.exit(code ?? 0);
   };
-  // CTRL+C real (SIGINT) OU SIGTERM => mata o Python (taskkill, sem depender de sinal de
-  // terminal) e encerra. NAO propaga o sinal — o Python ja esta em grupo proprio.
-  process.on("SIGINT", () => { launcherDbg("[SIGNAL] SIGINT (CTRL+C) — encerrando"); matarAgora(0); });
-  process.on("SIGTERM", () => { launcherDbg("[SIGNAL] SIGTERM — encerrando"); matarAgora(0); });
-  // SIGHUP (perda de foco / fechamento do MobaXterm) => IGNORA (so loga) — NAO mata o Python.
-  process.on("SIGHUP", () => launcherDbg("[SIGNAL] SIGHUP (perda de foco?) — IGNORADO (servidor segue)"));
+  // -------------------------------------------------------------------------
+  // ABSORÇÃO DE SINAIS (regra inviolável do launcher) — o app "encerrava
+  // sozinho" no MobaXterm porque a janela perde o foco / é minimizada e o
+  // terminal envia SIGINT/SIGHUP ESPÚRIOS: qualquer handler que trate esses
+  // sinais como "encerrar" derruba a stack inteira.
+  //   • Windows: SIGINT e SIGHUP são ABSORVIDOS (só log) — o launcher NÃO
+  //     morre. O encerramento real é via `prodmaker stop`, fechamento da janela
+  //     (readline close) ou taskkill.
+  //   • Linux/macOS: CTRL+C (SIGINT) encerra normalmente, como esperado.
+  // -------------------------------------------------------------------------
+  if (process.platform === "win32") {
+    process.on("SIGINT", () =>
+      launcherDbg("[SIGNAL] SIGINT no Windows — ABSORVIDO (nao encerra; MobaXterm envia sinal espurio ao perder foco)")
+    );
+    process.on("SIGHUP", () =>
+      launcherDbg("[SIGNAL] SIGHUP no Windows — ABSORVIDO (perda de foco/minimizar nao derruba o servidor)")
+    );
+    process.on("SIGTERM", () => {
+      launcherDbg("[SIGNAL] SIGTERM — encerrando");
+      matarAgora(0);
+    });
+  } else {
+    process.on("SIGINT", () => {
+      launcherDbg("[SIGNAL] SIGINT (CTRL+C) — encerrando");
+      matarAgora(0);
+    });
+    process.on("SIGHUP", () => launcherDbg("[SIGNAL] SIGHUP — ignorado (servidor segue)"));
+    process.on("SIGTERM", () => {
+      launcherDbg("[SIGNAL] SIGTERM — encerrando");
+      matarAgora(0);
+    });
+  }
 
   startPython();
 
@@ -562,21 +643,84 @@ async function commandRun() {
   printUrlBox(port, masterCode);
   if (pronto) {
     console.log("Servidor em grupo de processos PROPRIO (imune a CTRL_C fantasma do MobaXterm).");
-    console.log("URL: http://localhost:" + port + "  —  CTRL+C encerra limpo; perder o foco NAO derruba.");
+    if (process.platform === "win32") {
+      console.log("URL: http://localhost:" + port);
+      console.log("CTRL+C aqui NAO encerra (protecao anti-sinal-espurio: perder o foco nao derruba).");
+      console.log("Para parar: `prodmaker stop` ou feche esta janela.");
+    } else {
+      console.log("URL: http://localhost:" + port + "  —  CTRL+C encerra limpo; perder o foco NAO derruba.");
+    }
   } else {
     console.error("O servidor nao respondeu em 30s. Veja storage/logs/app.log.");
   }
 
-  // MANTEM O NODE VIVO: readline (stdin) + timer 1h (unref neutralizado). Terminal fechou
-  // (readline close, so em TTY) => mata o filho e encerra (morte casada pelo launcher).
-  keepAliveTimer = setInterval(() => {}, 60 * 60 * 1000);
+  // MANTEM O NODE VIVO (regra inviolável): timer keep-alive de 1s — o Event Loop
+  // NUNCA esvazia, independentemente do console (MobaXterm fecha/redireciona stdio
+  // sem avisar). Sem isso o processo poderia sair sozinho em beforeExit.
+  keepAliveTimer = setInterval(() => {}, 1000); // Mantém o event loop vivo
   if (keepAliveTimer && typeof keepAliveTimer.unref === "function") keepAliveTimer.unref = function () { return this; };
+  // PID file: permite ao comando `prodmaker stop` encerrar ESTE launcher (e, por
+  // consequência, o servidor) sem precisar adivinhar o PID do Node.
+  const LAUNCHER_PID_FILE = storagePath(home, "state", "launcher.pid");
+  try {
+    fs.writeFileSync(LAUNCHER_PID_FILE, String(process.pid), "utf8");
+  } catch {}
+  process.on("exit", () => {
+    try {
+      fs.unlinkSync(LAUNCHER_PID_FILE);
+    } catch {}
+  });
+
   const rl = readline.createInterface({ input: process.stdin, terminal: Boolean(process.stdin && process.stdin.isTTY) });
   rl.on("close", () => {
     launcherDbg("[READLINE] terminal fechou — encerrando");
     if (process.stdin && process.stdin.isTTY) matarAgora(0);
   });
   await new Promise(() => {});
+}
+
+async function commandStop() {
+  const home = resolveHome();
+  console.log(`ProdMaker ${APP_VERSION} — stop`);
+  let preferred = DEFAULT_PORT;
+  try {
+    const settings = JSON.parse(fs.readFileSync(storagePath(home, "state", "settings.json"), "utf8"));
+    if (Number.isInteger(settings.port)) preferred = settings.port;
+  } catch {}
+
+  // 1) Mata o LAUNCHER primeiro (senão o supervisor reergueria o servidor).
+  const pidFile = storagePath(home, "state", "launcher.pid");
+  let matouLauncher = false;
+  try {
+    const pid = fs.readFileSync(pidFile, "utf8").trim();
+    if (pid) {
+      if (process.platform === "win32") {
+        spawnSync("taskkill", ["/F", "/T", "/PID", pid], { stdio: "ignore", windowsHide: true });
+      } else {
+        try {
+          process.kill(Number(pid), "SIGKILL");
+        } catch {}
+      }
+      matouLauncher = true;
+      console.log(`Launcher (pid ${pid}) encerrado.`);
+    }
+  } catch {}
+
+  // 2) Mata o servidor Python pela porta (toda a faixa possível).
+  let matouServidor = 0;
+  for (let port = preferred; port <= preferred + 11; port += 1) {
+    const antes = portListeners(port);
+    killPortProcess(port);
+    if (antes > 0) {
+      matouServidor += 1;
+      console.log(`Porta ${port}: processo do servidor encerrado.`);
+    }
+  }
+  if (!matouLauncher && matouServidor === 0) {
+    console.log("Nenhum ProdMaker ativo encontrado (sem launcher registrado e portas livres).");
+  } else {
+    console.log("ProdMaker parado. Pode fechar a janela do terminal com seguranca.");
+  }
 }
 
 async function commandDoctor() {
@@ -609,7 +753,8 @@ async function main() {
   if (command === "install") return commandInstall(flags);
   if (command === "doctor") return commandDoctor();
   if (command === "run" || command === "start") return commandRun();
-  console.log("Uso: prodmaker [install|run|doctor] [--skip-python-deps]");
+  if (command === "stop" || command === "kill") return commandStop();
+  console.log("Uso: prodmaker [install|run|stop|doctor] [--skip-python-deps]");
 }
 
 main().catch((error) => {
