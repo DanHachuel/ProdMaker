@@ -60,6 +60,16 @@ jobs:
           PRODMAKER_HOME="$TEST_ROOT" node scripts/cli.mjs install --skip-python-deps
           test -f "$TEST_ROOT/storage/state/settings.json"
 
+      # PORTA OBRIGATÓRIA: renderiza todas as páginas do frontend em Node
+      # (react-dom/server, sem navegador). Um crash de render — import faltando,
+      # JSX inválido — reproduz a "tela preta" no usuário. Se este passo falhar,
+      # o job aborta e o npm NÃO é publicado.
+      - name: Frontend render smoke test (anti-tela-preta)
+        run: |
+          cd frontend
+          npm ci
+          npm test
+
       - name: Publish to npm
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:

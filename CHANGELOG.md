@@ -3,6 +3,24 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.45 — 2026-11-08
+
+- **ENCERRAMENTO — teste anti-tela-preta agora roda no CI (porta obrigatória antes
+  de publicar).**
+- `.github/workflows/publish-npm.yml`: novo passo **"Frontend render smoke test
+  (anti-tela-preta)"** entre a validação do launcher e o publish — `cd frontend &&
+  npm ci && npm test`. Se qualquer página crashar no render, o job **aborta e o
+  npm NÃO é publicado** (e a promoção a `latest` pela tag também não roda). O
+  passo vale para os dois gatilhos (dispatch com dist-tag `next` e push de tag).
+- **Conformidade com a nova REGRA ZERO — TERMINAL (AGENTS.md):** auditado o
+  `scripts/cli.mjs` — o spawn do servidor já usa `detached: true` +
+  `windowsHide: true` + `stdio: ["inherit","pipe","pipe"]` e troca para
+  **`pythonw.exe`** (subsistema GUI, sem console) no Windows; todos os
+  `spawnSync` (netstat, taskkill, doctor) têm `windowsHide: true`. Nenhum
+  caminho abre janela nativa de CMD.
+- Bump: `0.1.45` (`app/main.py`, `package.json`, `scripts/cli.mjs`) + registro
+  da regra nova no `AGENTS.md`.
+
 ## 0.1.44 — 2026-11-08
 
 - **TESTE AUTOMATIZADO contra a "tela preta" — roda em todo build do frontend.**

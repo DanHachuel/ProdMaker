@@ -6,6 +6,16 @@ navegador por qualquer meio (Node, Python ou sistema). O launcher apenas imprime
 a URL local (http://localhost:8188) no terminal; o usuário abre manualmente.
 Violação = bug crítico, corrigir antes de qualquer publicação.
 
+## Nunca abrir telas/janelas de CMD (REGRA ZERO — TERMINAL)
+É PROIBIDO criar/publicar versões que abram qualquer janela/tela nativa de CMD
+(cmd.exe/console) no computador do usuário. Todo processo filho (Python/worker)
+deve subir sem alocar console novo: no Windows use `windowsHide: true`
+(CREATE_NO_WINDOW) e, quando precisar de grupo de processos próprio,
+`detached: true` + `pythonw.exe` (subsistema GUI, sem console). O launcher só
+imprime no terminal já existente (MobaXterm/CMD); o usuário nunca pode ver uma
+janela preta piscar ao iniciar/rodar. Violação = bug crítico, corrigir antes de
+qualquer publicação.
+
 ## Versionamento NPM
 Convenção visual MAJOR.MINOR.PATCH com dois dígitos no PATCH. Patch 99 → MINOR+1
 e PATCH 00; MINOR 9 → MAJOR+1. Exemplos: 0.3.99 → 0.4.00; 0.9.99 → 1.0.00 (nunca
