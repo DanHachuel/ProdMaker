@@ -3,6 +3,19 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.43 — 2026-11-08
+
+- **HOTFIX DEFINITIVO — processo imune ao STATUS_CONTROL_C_EXIT (0xC000013A) do MobaXterm.**
+- Causa raiz: o MobaXterm envia CTRL_C_EVENT (0xC000013A) ao grupo do console; com o Python no
+  mesmo grupo, o Windows o matava junto ao Node (o falso "encerramento espontâneo").
+- `scripts/cli.mjs` (`commandRun`): o Python sobe em **grupo de processos PRÓPRIO**
+  (`detached:true` + `windowsHide:true` = CREATE_NEW_PROCESS_GROUP + CREATE_NO_WINDOW) + **`pythonw.exe`**
+  (subsistema GUI, sem janela de CMD), com `stdio ['inherit','pipe','pipe']` (logs via proxy do Node).
+  O Node fica vivo (readline + timer), **ignora SIGHUP** (perda de foco) e, no **CTRL+C real (SIGINT)/SIGTERM**,
+  mata o Python via `taskkill /F /T`. Auto-restart (até 3×) e `killPortProcess` mantidos.
+- `app/main.py`: `SetConsoleCtrlHandler` (ctypes) ignora CTRL_C/CTRL_BREAK/CTRL_CLOSE no Python — dupla proteção.
+- Bump 0.1.42 → 0.1.43 (package.json, cli.mjs, app/main.py APP_VERSION + canonical) + CHANGELOG.
+
 ## 0.1.42 — 2026-11-08
 
 - **HOTFIX — launcher robusto no MobaXterm: death hooks + limpeza de porta + readline + auto-restart.**

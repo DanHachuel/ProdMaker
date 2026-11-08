@@ -29,7 +29,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.42";
+const APP_VERSION = "0.1.43";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -152,6 +152,15 @@ function killPortProcess(port) {
       try { spawnSync("taskkill", ["/F", "/PID", pid], { stdio: "ignore", windowsHide: true }); } catch {}
     }
   } catch {}
+}
+// Spawn DETACHED no Windows: use pythonw.exe (subsistema GUI) para NAO alocar
+// console/janela de CMD (python.exe + detach abria janela). Fallback: python.exe.
+function daemonPython(py) {
+  if (process.platform === "win32" && typeof py === "string" && py.toLowerCase().endsWith("python.exe")) {
+    const pyw = py.slice(0, py.length - "python.exe".length) + "pythonw.exe";
+    if (fs.existsSync(pyw)) return pyw;
+  }
+  return py;
 }
 function printUrlBox(port, masterCode) {
   const url = `http://localhost:${port}`;
@@ -474,9 +483,13 @@ async function commandRun() {
   // atrasando os logs no proxy/MobaXterm. unbuffered = logs em tempo real.
   const env = { ...process.env, PRODMAKER_HOME: home, PRODMAKER_PORT: String(port), PYTHONUNBUFFERED: "1" };
 
-  // MODELO ATRELADO AO TERMINAL + auto-restart + readline (morte casada, sem orfao).
-  // 1) limpa fantasmas na porta  2) sobe o Python  3) reinicia se cair (ate 3x)
-  // 4) mantem o Node vivo via readline (so fecha quando o terminal fecha).
+  // ISOLAMENTO DO GRUPO DE PROCESSOS — fix do STATUS_CONTROL_C_EXIT (0xC000013A).
+  // O MobaXterm envia CTRL_C_EVENT ao grupo do console; se o Python estiver no MESMO
+  // grupo, ele morre junto. Solucao: o Python sobe em grupo PROPRIO
+  // (detached+windowsHide = CREATE_NEW_PROCESS_GROUP + CREATE_NO_WINDOW) + pythonw (sem
+  // janela). O Node (launcher) media: fica vivo (readline), IGNORA SIGHUP (perda de foco),
+  // e no CTRL+C real (SIGINT) mata o Python via taskkill. O Python tambem ignora Ctrl via
+  // SetConsoleCtrlHandler (app/main.py).
   killPortProcess(port);
 
   let stopping = false;
@@ -486,33 +499,32 @@ async function commandRun() {
   const MAX_RESTARTS = 3;
 
   const startPython = () => {
-    child = spawn(python, pythonArgs, {
+    child = spawn(daemonPython(python), pythonArgs, {
       cwd: PKG_ROOT,
-      stdio: "inherit",
+      detached: true, // grupo PROPRIO: imune ao CTRL_C_EVENT do console (0xC000013A)
+      windowsHide: true, // CREATE_NO_WINDOW: nunca abre janela de CMD
+      stdio: ["inherit", "pipe", "pipe"], // logs passam pelo proxy do Node pro terminal atual
       env,
       shell: false,
-      windowsHide: true,
     });
-    launcherDbg(`[RUN] spawn python pid=${child.pid} port ${port} (t=${restarts + 1})`);
-
-    child.on("error", (error) => console.error(`[ERRO FATAL] falha ao iniciar o Python: ${error.message}`));
-
-    // HOOK visivel no terminal: por que o Python morreu.
+    launcherDbg(`[RUN] spawn python(grupo proprio) pid=${child.pid} port ${port} (t=${restarts + 1})`);
+    child.stdout?.on("data", (d) => { if (!stopping) process.stdout.write(d); });
+    child.stderr?.on("data", (d) => { if (!stopping) process.stderr.write(d); });
+    child.on("error", (e) => console.error(`[ERRO FATAL] falha ao iniciar o Python: ${e.message}`));
     child.on("exit", (code, signal) => {
       console.log(`\n[PYTHON MORREU] Codigo: ${code ?? "null"}, Sinal: ${signal ?? "null"} — ${path.join(home, "storage", "logs", "app.log")}`);
-      launcherDbg(`[CHILD] python exit code=${code ?? "null"} signal=${signal ?? "null"}`);
+      launcherDbg(`[CHILD] exit code=${code ?? "null"} signal=${signal ?? "null"}`);
     });
-
     child.on("close", (code) => {
       if (stopping) return;
       if (restarts < MAX_RESTARTS) {
         restarts += 1;
-        console.error(`[ProdMaker] Python caiu (codigo ${code ?? 0}). Reiniciando (tentativa ${restarts} de ${MAX_RESTARTS})...`);
-        launcherDbg(`[RESTART] tentativa ${restarts} de ${MAX_RESTARTS}`);
+        console.error(`[ProdMaker] Python caiu (codigo ${code ?? 0}). Reiniciando (${restarts}/${MAX_RESTARTS})...`);
+        launcherDbg(`[RESTART] ${restarts}/${MAX_RESTARTS}`);
         setTimeout(startPython, 2000);
         return;
       }
-      console.error(`[ProdMaker] Python falhou ${MAX_RESTARTS} vezes. Encerrando — rode npm run debug para o traceback.`);
+      console.error(`[ProdMaker] Python falhou ${MAX_RESTARTS}x. Encerrando — rode npm run debug.`);
       process.exit(1);
     });
   };
@@ -536,10 +548,12 @@ async function commandRun() {
     launcherDbg(`[STOP] matarAgora(${code ?? 0})`);
     process.exit(code ?? 0);
   };
-  // Ctrl+C e fechamento do terminal (SIGHUP/SIGTERM do MobaXterm) => encerra casado.
-  process.on("SIGINT", () => { launcherDbg("[SIGNAL] SIGINT (Ctrl+C)"); matarAgora(0); });
-  process.on("SIGTERM", () => { launcherDbg("[SIGNAL] SIGTERM"); matarAgora(0); });
-  process.on("SIGHUP", () => { launcherDbg("[SIGNAL] SIGHUP (terminal fechando?)"); matarAgora(0); });
+  // CTRL+C real (SIGINT) OU SIGTERM => mata o Python (taskkill, sem depender de sinal de
+  // terminal) e encerra. NAO propaga o sinal — o Python ja esta em grupo proprio.
+  process.on("SIGINT", () => { launcherDbg("[SIGNAL] SIGINT (CTRL+C) — encerrando"); matarAgora(0); });
+  process.on("SIGTERM", () => { launcherDbg("[SIGNAL] SIGTERM — encerrando"); matarAgora(0); });
+  // SIGHUP (perda de foco / fechamento do MobaXterm) => IGNORA (so loga) — NAO mata o Python.
+  process.on("SIGHUP", () => launcherDbg("[SIGNAL] SIGHUP (perda de foco?) — IGNORADO (servidor segue)"));
 
   startPython();
 
@@ -547,23 +561,22 @@ async function commandRun() {
   const pronto = await waitReady(port);
   printUrlBox(port, masterCode);
   if (pronto) {
-    console.log("Servidor acoplado a este terminal. Mantenha a janela ABERTA; fechar ou CTRL+C encerra o servidor.");
-    console.log("URL: http://localhost:" + port);
+    console.log("Servidor em grupo de processos PROPRIO (imune a CTRL_C fantasma do MobaXterm).");
+    console.log("URL: http://localhost:" + port + "  —  CTRL+C encerra limpo; perder o foco NAO derruba.");
   } else {
     console.error("O servidor nao respondeu em 30s. Veja storage/logs/app.log.");
   }
 
-  // MANTEM O NODE VIVO: readline segura o terminal (só fecha quando o terminal fecha)
-  // + timer de 1h com unref neutralizado (rede). Em stdin nao-tty (pipe/redirect) o
-  // EOF e imediato — aí NAO tratamos close (evita saida falsa); o timer mantem no ar.
+  // MANTEM O NODE VIVO: readline (stdin) + timer 1h (unref neutralizado). Terminal fechou
+  // (readline close, so em TTY) => mata o filho e encerra (morte casada pelo launcher).
   keepAliveTimer = setInterval(() => {}, 60 * 60 * 1000);
   if (keepAliveTimer && typeof keepAliveTimer.unref === "function") keepAliveTimer.unref = function () { return this; };
   const rl = readline.createInterface({ input: process.stdin, terminal: Boolean(process.stdin && process.stdin.isTTY) });
   rl.on("close", () => {
-    launcherDbg("[READLINE] interface fechada (terminal fechou?)");
-    if (process.stdin && process.stdin.isTTY) matarAgora(0); // so em TTY real (nunca em pipe/EOF falso)
+    launcherDbg("[READLINE] terminal fechou — encerrando");
+    if (process.stdin && process.stdin.isTTY) matarAgora(0);
   });
-  await new Promise(() => {}); // segura o comando ate sinal/fechamento/fim do filho
+  await new Promise(() => {});
 }
 
 async function commandDoctor() {

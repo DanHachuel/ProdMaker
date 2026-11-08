@@ -32,7 +32,7 @@ from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, ge
 shutdown.instalar()
 configure_logging()
 
-APP_VERSION = "0.1.42"
+APP_VERSION = "0.1.43"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -334,7 +334,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.42"}
+    return {"version": APP_VERSION, "canonical": "0.1.43"}
 
 
 @app.get("/api/settings")
@@ -495,7 +495,32 @@ def _silent_shutdown_server(application) -> None:
         shutdown.encerrar(0)
 
 
+_CTRL_HANDLER_REF = None
+
+
+def _ignorar_ctrl_windows() -> None:
+    """Windows: ignora CTRL_C/CTRL_BREAK/CTRL_CLOSE do console para o processo NAO
+    morrer por sinal fantasma do MobaXterm (STATUS_CONTROL_C_EXIT / 0xC000013A). O
+    encerramento é feito pelo launcher (taskkill /F /T). Noop em outros SOs."""
+    global _CTRL_HANDLER_REF
+    import sys
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        @ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
+        def _handler(ctrl_type):
+            return True  # TRUE = sinal tratado; NAO termina o processo
+
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(_handler, True)
+        _CTRL_HANDLER_REF = _handler  # mantem referencia viva (evita GC do callback)
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
+    _ignorar_ctrl_windows()
     porta = int(os.environ.get("PRODMAKER_PORT") or 8188)
     print(f"[ProdMaker] Iniciando em http://127.0.0.1:{porta} — mantenha esta janela aberta (CTRL+C para encerrar).")
     print(f"[ProdMaker] Log persistente: {PRODMAKER_HOME / 'storage' / 'logs' / 'app.log'}")
