@@ -3,6 +3,31 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.44 — 2026-11-08
+
+- **TESTE AUTOMATIZADO contra a "tela preta" — roda em todo build do frontend.**
+- Novo `frontend/scripts/render-smoke.mjs` (`npm test` em `frontend/`): bundla o
+  app com esbuild (Node, CJS, JSX automático — mesmo setup do Vite) e renderiza
+  **todas as páginas** com `react-dom/server` dentro do contexto real
+  (`AppCtx` + `ToastProvider` + `MemoryRouter`), nos **dois perfis** (admin e
+  usuário comum). Qualquer crash de render = build abortado.
+- Descoberta de páginas é **dinâmica** (`src/pages/*.jsx`): página nova entra no
+  teste automaticamente, sem manutenção.
+- Também verifica: (a) o `ErrorBoundary` — `getDerivedStateFromError` captura o
+  crash e a tela amigável renderiza com os botões; (b) o mapeamento de rotas
+  (`/`, `/api-keys`, `/configuracoes/plano`, `/tracking/vendas`,
+  `/hosting/paginas`); (c) a guarda RBAC (`role !== "admin"` no App.jsx); (d) o
+  boundary na raiz (`main.jsx`).
+- **`frontend/package.json`:** `build` agora é
+  `node scripts/render-smoke.mjs && vite build` — o teste passa a ser
+  **obrigatório antes de cada build** (e `npm test` rodа isolado).
+- Não abre navegador (REGRA ZERO): renderização server-side em Node.
+- Prova de fogo: com o bug da 0.1.32 reintroduzido (import `useApp` removido),
+  o teste falha (`ApiKeys/default — useApp is not defined`) e aborta o build;
+  com o código correto, 59/59 verificações passam. Build completo validado
+  (teste → vite build em 7s) sem churn no `frontend/dist`.
+- Bump: `0.1.44` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.43 — 2026-11-08
 
 - **HOTFIX DEFINITIVO — processo imune ao STATUS_CONTROL_C_EXIT (0xC000013A) do MobaXterm.**

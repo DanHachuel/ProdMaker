@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "test": "node scripts/render-smoke.mjs",
+    "build": "node scripts/render-smoke.mjs && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
