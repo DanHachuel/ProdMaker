@@ -36,6 +36,31 @@ def test_launcher_keepalive_and_isolation():
     assert "guardConsoleStream(process.stderr)" in content, "Guarda do stderr removida!"
 
 
+def test_trava_absoluta_tres_mecanismos():
+    """O launcher NÃO pode sair sozinho com código 0 após o box.
+
+    Ressintoma relatado: no MobaXterm o event loop esvasiava (stdio sumia) e o
+    Node saia limpo. Defesa em 3 camadas +Watchdog silencioso.
+    """
+    content = _conteudo()
+    # (a) timer keep-alive
+    assert "setInterval(() => {}, 1000)" in content, "Timer keep-alive removido!"
+    # (b) trava absoluta: commandRun nunca retorna
+    assert "await new Promise(() => {})" in content, "Trava absoluta (Promise infinita) removida!"
+    # (c) rearme no beforeExit: se o loop esvair, REAGENDA e segue
+    assert "beforeExit" in content, "Rearme no beforeExit removido!"
+    assert "REARMANDO" in content, "Reagendamento do beforeExit removido!"
+    # watchdog silencioso (prova de vida no arquivo)
+    assert "WATCHDOG" in content, "Watchdog silencioso removido!"
+
+
+def test_readline_close_nao_mata_com_servidor_vivo():
+    """EOF/close do stdin NÃO pode encerrar o launcher enquanto o filho vive."""
+    content = _conteudo()
+    assert "childVivo()" in content, "Verificacao do filho vivo no close do readline removida!"
+    assert "servidor segue NO AR" in content, "Mensagem de continuidade apos stdin fechar removida!"
+
+
 def test_sinais_absorvidos_no_windows():
     """No Windows, SIGINT e SIGHUP NAO podem encerrar o launcher (sinal espúrio)."""
     content = _conteudo()
@@ -57,6 +82,8 @@ if __name__ == "__main__":
         test_launcher_keepalive_and_isolation,
         test_sinais_absorvidos_no_windows,
         test_comando_stop_disponivel,
+        test_trava_absoluta_tres_mecanismos,
+        test_readline_close_nao_mata_com_servidor_vivo,
     ]
     falhas = 0
     for teste in testes:

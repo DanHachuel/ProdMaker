@@ -29,7 +29,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.46";
+const APP_VERSION = "0.1.47";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -584,6 +584,9 @@ async function commandRun() {
     });
   };
 
+  // O filho Python está rodando? (exitCode/signalCode ficam null enquanto vivo)
+  const childVivo = () => Boolean(child && child.exitCode === null && child.signalCode === null);
+
   const killChild = () => {
     try {
       if (child && child.pid && process.platform === "win32") {
@@ -654,11 +657,37 @@ async function commandRun() {
     console.error("O servidor nao respondeu em 30s. Veja storage/logs/app.log.");
   }
 
-  // MANTEM O NODE VIVO (regra inviolável): timer keep-alive de 1s — o Event Loop
-  // NUNCA esvazia, independentemente do console (MobaXterm fecha/redireciona stdio
-  // sem avisar). Sem isso o processo poderia sair sozinho em beforeExit.
+  // -------------------------------------------------------------------------
+  // TRAVA ABSOLUTA (regra inviolável) — TRÊS mecanismos independentes contra o
+  // "encerra com Código: 0 logo após o box" (event loop que esvaziou):
+  //   (a) timer keep-alive de 1s — o Event Loop nunca esvazia;
+  //   (b) Promise que NUNCA resolve — commandRun não retorna;
+  //   (c) REARME no beforeExit — se o loop esvaziar de todo (stdio do MobaXterm
+  //       sumindo, handles fechando), o handler REAGENDA trabalho e o Node
+  //       CONTINUA. Somados, o processo só morre por `stop`, sinal real ou
+  //       hard-kill — nunca sozinho com código 0.
+  // -------------------------------------------------------------------------
   keepAliveTimer = setInterval(() => {}, 1000); // Mantém o event loop vivo
-  if (keepAliveTimer && typeof keepAliveTimer.unref === "function") keepAliveTimer.unref = function () { return this; };
+  const rearme = setInterval(() => {}, 1000); // segunda trava, independente da primeira
+  for (const t of [keepAliveTimer, rearme]) {
+    if (t && typeof t.unref === "function") t.unref = function () { return this; };
+  }
+  process.on("beforeExit", (code) => {
+    // Se o loop ESVASIOU (antes impossível com os timers), reagenda e segue.
+    launcherDbg(
+      `[NODE] beforeExit code=${code} — python ${childVivo() ? "vivo" : "morto"} restarts=${restarts} stopping=${stopping} — REARMANDO (nao encerra sozinho)`
+    );
+    try {
+      const t = setInterval(() => {}, 1000);
+      if (typeof t.unref === "function") t.unref = function () { return this; };
+    } catch {}
+  });
+  // Watchdog SILENCIOSO (só arquivo): batimento a cada 30s no launcher-debug.log
+  // para provar, numa investigação futura, que o launcher seguiu vivo.
+  const watchdog = setInterval(() => {
+    launcherDbg(`[WATCHDOG] launcher vivo (pid ${process.pid}) — python ${childVivo() ? "vivo" : "MORTO"} restarts=${restarts}/${MAX_RESTARTS}`);
+  }, 30000);
+  watchdog.unref = function () { return this; };
   // PID file: permite ao comando `prodmaker stop` encerrar ESTE launcher (e, por
   // consequência, o servidor) sem precisar adivinhar o PID do Node.
   const LAUNCHER_PID_FILE = storagePath(home, "state", "launcher.pid");
@@ -673,10 +702,23 @@ async function commandRun() {
 
   const rl = readline.createInterface({ input: process.stdin, terminal: Boolean(process.stdin && process.stdin.isTTY) });
   rl.on("close", () => {
-    launcherDbg("[READLINE] terminal fechou — encerrando");
-    if (process.stdin && process.stdin.isTTY) matarAgora(0);
+    // STDIN fechando NAO significa fim da aplicacao: no MobaXterm o EOF pode
+    // chegar por redirecionamento/perda de stdio sem o usuario fechar nada.
+    // Regra: só encerra se o servidor Python TAMBÉM já morreu. Com o servidor
+    // no ar, o launcher SEGUE (o usuário para com `prodmaker stop`).
+    launcherDbg("[READLINE] stdin fechou — verificando servidor antes de encerrar");
+    if (!(process.stdin && process.stdin.isTTY)) return;
+    setTimeout(() => {
+      if (childVivo()) {
+        launcherDbg("[READLINE] terminal/stdin fechou, mas o servidor segue NO AR — launcher mantido (use prodmaker stop)");
+        console.error("\n[ProdMaker] O terminal perdeu o stdin, mas o servidor continua no ar. Use `prodmaker stop` para parar.");
+      } else {
+        launcherDbg("[READLINE] terminal fechou e servidor ja morto — encerrando junto");
+        matarAgora(0);
+      }
+    }, 3000);
   });
-  await new Promise(() => {});
+  await new Promise(() => {}); // trava absoluta: commandRun nunca retorna
 }
 
 async function commandStop() {

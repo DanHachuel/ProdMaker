@@ -3,6 +3,23 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.47 — 2026-11-08
+
+- **HOTFIX DEFINITIVO — o launcher NÃO encerra mais sozinho com Código: 0 no MobaXterm.**
+- Causa raiz: no MobaXterm o event loop ESVASIAVA (stdio/handles sumindo) e o Node saía
+  natural com código 0 logo após o box (a mensagem `[LAUNCHER] O Node está encerrando.
+  Código: 0`). Não era `process.exit()` nem `child.on('exit')` — era o loop esvaziando sem trava.
+- `scripts/cli.mjs` — TRAVA ABSOLUTA (3 mecanismos independentes) + watchdog:
+  1. `keepAliveTimer` **+** `rearme`: `setInterval(() => {}, 1000)` (unref neutralizado) — loop nunca esvasia;
+  2. `await new Promise(() => {})` no fim do `commandRun` — nunca retorna;
+  3. rearme no `beforeExit`: se o loop esvair de todo, REAGENDA e continua.
+  + `readline`: EOF/close do stdin só encerra se o filho Python TAMBÉM morreu (`childVivo()`);
+  + no Windows `SIGINT`/`SIGHUP` são ABSORVIDOS (sinal espúrio do MobaXterm ao perder foco) — só logam;
+  + `guardConsoleStream` (absorve EPIPE) e `CREATE_NEW_PROCESS_GROUP` no filho.
+  Encerramento real: `prodmaker stop`, fechar a janela ou `taskkill`.
+- `tests/test_launcher_keepalive.py` (roda no CI antes do publish) falha se qualquer proteção for removida.
+- Bump 0.1.46 → 0.1.47 (package.json, cli.mjs, app/main.py + canonical) + CHANGELOG.
+
 ## 0.1.46 — 2026-11-08
 
 - **HOTFIX CRÍTICO — o app NÃO morre mais sozinho no MobaXterm/Windows.**
