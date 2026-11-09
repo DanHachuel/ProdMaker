@@ -3,6 +3,26 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.49 — 2026-11-09
+
+- **HOTFIX — o `install` não aborta mais a cópia do `.runtime` silenciosamente.**
+- `prepararRuntime` (`scripts/cli.mjs`) reforçado:
+  - `fs.rmSync(..., { maxRetries: 8, retryDelay: 400 })` — espera o handle liberar no
+    Windows (EBUSY) em vez de busy-wait que trava o event loop;
+  - **try/catch** em limpar/criar/copiar — qualquer falha sobe com mensagem clara
+    (nunca encerra em silêncio);
+  - item de origem obrigatório ausente (`app/`, `frontend/dist/`, ...) agora **falha
+    alto** em vez de ser pulado em silêncio (.runtime deixava de nascer completo e o
+    `run` quebrava depois).
+- `commandInstall`: `try/catch` com `[ERRO FATAL] Falha ao copiar arquivos para o
+  .runtime:` + exit(1); sucesso com `[✓] Runtime isolado com sucesso` e
+  `[✓] Instalação e isolamento do runtime concluídos com sucesso.`
+- Interceptor de `exit` só imprime `[LAUNCHER] ... Código: X` no comando `run`
+  (install/stop/doctor têm mensagens próprias — sem o ruído "Código: 0" no fim do install).
+- Bump 0.1.48 → 0.1.49 (package.json, cli.mjs, app/main.py + canonical) + CHANGELOG.
+- Testado: `.runtime` limpo → install com `[✓]` e sem "Código: 0"; `run` do `.runtime`
+  sobe com o box + `health 200`; testes `test_launcher_keepalive` e `test_runtime_architecture` 5/5.
+
 ## 0.1.48 — 2026-11-09
 
 - **HOTFIX DE ARQUITETURA — RUNTIME PERMANENTE (fim do EBUSY do npx).**

@@ -29,7 +29,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.48";
+const APP_VERSION = "0.1.49";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -110,27 +110,38 @@ function matarProcessosDoRuntime(rt) {
 }
 
 // Copia o código do pacote (cache do npx) para o .runtime. Idempotente.
+// NUNCA encerra em silêncio: qualquer falha (EBUSY, permissão, fonte ausente)
+// sobe como exceção com mensagem clara (o commandInstall transforma em
+// [ERRO FATAL] e exit(1)).
 function prepararRuntime(rt) {
   matarProcessosDoRuntime(rt);
-  // espera breve para os handles dos processos mortos liberarem os arquivos
-  const deadline = Date.now() + 3000;
-  while (Date.now() < deadline) {
-    try {
-      fs.rmSync(rt, { recursive: true, force: true });
-      break;
-    } catch {
-      // ainda em uso — tenta de novo em 300ms
-      const espera = Date.now() + 300;
-      while (Date.now() < espera) {}
-    }
+  // Limpa o .runtime antigo. No Windows, arquivos abertos por um processo recém-
+  // morto podem dar EBUSY: maxRetries/retryDelay esperam o handle liberar (sem
+  // busy-wait, que trava o event loop).
+  try {
+    fs.rmSync(rt, { recursive: true, force: true, maxRetries: 8, retryDelay: 400 });
+  } catch (err) {
+    throw new Error(`nao foi possivel limpar o .runtime antigo (${rt}): ${err && err.message ? err.message : err}`);
   }
-  fs.mkdirSync(rt, { recursive: true });
+  try {
+    fs.mkdirSync(rt, { recursive: true });
+  } catch (err) {
+    throw new Error(`nao foi possivel criar o .runtime (${rt}): ${err && err.message ? err.message : err}`);
+  }
   const copiados = [];
-  for (const item of RUNTIME_ITENS) {
-    const src = path.join(PKG_ROOT, item);
-    if (!fs.existsSync(src)) continue;
-    fs.cpSync(src, path.join(rt, item), { recursive: true });
-    copiados.push(item);
+  try {
+    for (const item of RUNTIME_ITENS) {
+      const src = path.join(PKG_ROOT, item);
+      if (!fs.existsSync(src)) {
+        // Item obrigatório faltando no pacote: NÃO pula em silêncio (senão o
+        // .runtime nasce incompleto e o `run` falha depois). Falha ALTO e claro.
+        throw new Error(`fonte obrigatoria ausente no pacote: ${src}`);
+      }
+      fs.cpSync(src, path.join(rt, item), { recursive: true });
+      copiados.push(item);
+    }
+  } catch (err) {
+    throw new Error(`falha ao copiar arquivos para o .runtime: ${err && err.message ? err.message : err}`);
   }
   return copiados;
 }
@@ -205,7 +216,10 @@ process.on("exit", (code) => {
   // tem uma linha breve; qualquer OUTRA saída mostra o código (a pista da morte).
   const m = controlledStop ? "[LAUNCHER] Encerrado - servidor finalizado junto com o terminal." : `[LAUNCHER] O Node está encerrando. Código: ${code}`;
   launcherDbg(m);
-  console.error(`\n${m}`);
+  // Só no `run` a mensagem de encerramento importa (trava absoluta). install/stop/
+  // doctor têm mensagens próprias — a saída natural não vira o ruído
+  // "[...] Código: 0" que confundia o usuário no fim do install.
+  if ((process.argv[2] || "run") === "run") console.error(`\n${m}`);
 });
 process.on("uncaughtException", (err) => {
   const m = `[LAUNCHER] Erro não tratado: ${err && err.stack ? err.stack : err}`;
@@ -568,11 +582,18 @@ async function commandInstall(flags) {
   // prepara o ambiente e encerra, liberando o npx na hora (fim do EBUSY).
   const rt = runtimeDir(home);
   console.log(`Isolando o runtime em ${rt} ...`);
-  const copiados = prepararRuntime(rt);
-  console.log(`Runtime pronto (${copiados.join(", ")}).`);
+  try {
+    const copiados = prepararRuntime(rt);
+    console.log(`[✓] Runtime isolado com sucesso (${copiados.join(", ")}).`);
+  } catch (err) {
+    // NUNCA encerrar silenciosamente: imprime o erro EXATO e sai com código 1.
+    console.error(`[ERRO FATAL] Falha ao copiar arquivos para o .runtime: ${err && err.message ? err.message : err}`);
+    process.exit(1);
+  }
 
   console.log("");
-  console.log("Instalação concluída. Para iniciar:");
+  console.log("[✓] Instalação e isolamento do runtime concluídos com sucesso.");
+  console.log("Para iniciar:");
   console.log("  npx --yes @danhachuel/prodmaker");
   console.log("Depois abra http://localhost:8188 MANUALMENTE no navegador (o sistema nunca abre o navegador).");
 }
