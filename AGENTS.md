@@ -37,6 +37,22 @@ em console fechado gera EPIPE — ambos já derrubaram o app sem motivo. Por iss
 5. **Trava de regressão:** `tests/test_launcher_keepalive.py` falha se qualquer
    uma das proteções acima for removida; rodar antes de publicar (CI).
 
+## 🚨 REGRA INVIOLÁVEL: RUNTIME PERMANENTE (fim do EBUSY)
+O servidor **nunca** deve rodar do cache do `npx` (`.npm/_npx/...`). Com o Node e
+o Python executando de lá, os arquivos do cache ficam travados e qualquer
+atualização falha com `EBUSY`.
+1. O diretório fixo de execução é `PRODMAKER_HOME/.runtime` — criado antes de
+   qualquer execução.
+2. O comando `install` **apenas copia** (`app/`, `frontend/dist/`, `seed/`,
+   `legal/`, `requirements.txt`, `package.json`) para o `.runtime` — matando
+   antes os processos antigos para evitar EBUSY — e **não** roda o servidor.
+3. O comando `run` **sempre** lê/executa do `.runtime` (spawn do Python com
+   `cwd` no runtime; frontend servido de `.runtime/frontend/dist`).
+4. O `storage/` (banco, logs, chaves) continua na **RAIZ** do `PRODMAKER_HOME` —
+   dados do usuário nunca vivem dentro do `.runtime` (sobrevivem a updates).
+5. **Trava de regressão:** `tests/test_runtime_architecture.py` falha se a
+   separação install=cópia / run=execução-do-runtime for quebrada; roda no CI.
+
 ## Versionamento NPM
 Convenção visual MAJOR.MINOR.PATCH com dois dígitos no PATCH. Patch 99 → MINOR+1
 e PATCH 00; MINOR 9 → MAJOR+1. Exemplos: 0.3.99 → 0.4.00; 0.9.99 → 1.0.00 (nunca

@@ -3,6 +3,33 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.48 — 2026-11-09
+
+- **HOTFIX DE ARQUITETURA — RUNTIME PERMANENTE (fim do EBUSY do npx).**
+- **Problema:** o ProdMaker rodava direto da pasta temporária do `npx`
+  (`.npm/_npx/...`). Com o Node e o Python executando de lá, os arquivos do
+  cache ficavam travados e qualquer atualização falha com `EBUSY`.
+- **Solução (regra inviolável em `AGENTS.md`):** o servidor agora roda de
+  `PRODMAKER_HOME/.runtime` — pasta fixa no disco do usuário, fora do cache.
+- **`install` = apenas cópia:** mata processos antigos do runtime (PID file do
+  launcher + varredura da porta + processos com o `.runtime` na linha de
+  comando), limpa e copia `app/`, `frontend/dist/`, `seed/`, `legal/`,
+  `requirements.txt` e `package.json` para `.runtime`. **Não roda o servidor** —
+  prepara o ambiente e encerra, liberando o npx imediatamente.
+- **`run` = execução do runtime:** o Python soge com `cwd` no `.runtime`
+  (`python -m app.main`), o frontend é servido de `.runtime/frontend/dist` e o
+  `fetchMasterCode` lê do runtime. Sem `.runtime` preparado, o `run` explica o
+  que fazer (`npx ... install`).
+- **Dados preservados:** o `storage/` (banco, logs, chaves) continua na **RAIZ**
+  do `PRODMAKER_HOME` — nada do usuário vive dentro do `.runtime`; atualizações
+  de código não tocam nos dados.
+- `doctor` passa a diagnosticar o `.runtime` (backend/frontend que o `run` vai
+  usar) em vez do cache do npx.
+- **Trava de regressão:** novo `tests/test_runtime_architecture.py` (5
+  verificações) + novo passo **"Runtime architecture guard (anti-EBUSY)"** no
+  workflow — instalar/rodar do cache de novo aborta o job e o npm não publica.
+- Bump: `0.1.48` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.47 — 2026-11-08
 
 - **HOTFIX DEFINITIVO — o launcher NÃO encerra mais sozinho com Código: 0 no MobaXterm.**

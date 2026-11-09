@@ -76,6 +76,12 @@ jobs:
       - name: Launcher architecture guard (anti-morte-espontânea)
         run: python3 tests/test_launcher_keepalive.py
 
+      # REGRA INVIOLÁVEL: runtime permanente (.runtime) — install copia, run
+      # executa do runtime; storage segue na raiz do home. Se a separação for
+      # quebrada, o job ABORTA e o npm NÃO é publicado.
+      - name: Runtime architecture guard (anti-EBUSY)
+        run: python3 tests/test_runtime_architecture.py
+
       - name: Publish to npm
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:

@@ -29,7 +29,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.47";
+const APP_VERSION = "0.1.48";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -50,6 +50,89 @@ function resolveHome() {
     if (fs.existsSync(DESIGNATED_HOME)) return path.resolve(DESIGNATED_HOME);
   } catch {}
   return path.join(os.homedir(), "ProdMaker");
+}
+
+// ---------------------------------------------------------------------------
+// RUNTIME PERMANENTE (regra inviolável — ver AGENTS.md).
+// O servidor NUNCA roda do cache do npx (.npm/_npx/...): com o Python e o Node
+// executando de lá, os arquivos do cache ficam travados e qualquer atualização
+// falha com EBUSY. O `install` copia o código para PRODMAKER_HOME/.runtime e o
+// `run` executa SEMPRE de lá. O storage (banco, logs, chaves) continua na RAIZ
+// do PRODMAKER_HOME — os dados do usuário sobrevivem a qualquer atualização.
+// ---------------------------------------------------------------------------
+function runtimeDir(home) {
+  return path.join(home || resolveHome(), ".runtime");
+}
+
+// O que o app precisa para rodar fora do cache do npx.
+const RUNTIME_ITENS = ["app", "frontend/dist", "seed", "legal", "requirements.txt", "package.json"];
+
+// Mata TUDO que segura o runtime antigo (launcher registrado, servidor na porta
+// e processos com o .runtime na linha de comando) — sem isso a cópia falha com
+// EBUSY. Só mata processos do NOSSO caminho (nunca de outros projetos).
+function matarProcessosDoRuntime(rt) {
+  // 1) PID file do launcher (evita que o supervisor reerga o servidor).
+  try {
+    const pidFile = path.join(rt, "..", "storage", "state", "launcher.pid");
+    const pid = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, "utf8").trim() : "";
+    if (pid) {
+      if (process.platform === "win32") {
+        spawnSync("taskkill", ["/F", "/T", "/PID", pid], { stdio: "ignore", windowsHide: true });
+      } else {
+        try { process.kill(Number(pid), "SIGKILL"); } catch {}
+      }
+    }
+  } catch {}
+  // 2) Porta do servidor (faixa completa do pickPort) — o Python sempre escuta.
+  try {
+    const home = path.dirname(rt); // rt = home/.runtime
+    const settingsPath = path.join(home, "storage", "state", "settings.json");
+    let preferred = DEFAULT_PORT;
+    try {
+      const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+      if (Number.isInteger(settings.port)) preferred = settings.port;
+    } catch {}
+    for (let port = preferred; port <= preferred + 11; port += 1) {
+      killPortProcess(port);
+    }
+  } catch {}
+  // 3) Varredura por linha de comando (pega processos que perderam a porta).
+  if (process.platform === "win32") {
+    try {
+      spawnSync(
+        "powershell",
+        ["-NoProfile", "-Command",
+          `Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%${rt}%'" | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }`],
+        { stdio: "ignore", windowsHide: true }
+      );
+    } catch {}
+  }
+}
+
+// Copia o código do pacote (cache do npx) para o .runtime. Idempotente.
+function prepararRuntime(rt) {
+  matarProcessosDoRuntime(rt);
+  // espera breve para os handles dos processos mortos liberarem os arquivos
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    try {
+      fs.rmSync(rt, { recursive: true, force: true });
+      break;
+    } catch {
+      // ainda em uso — tenta de novo em 300ms
+      const espera = Date.now() + 300;
+      while (Date.now() < espera) {}
+    }
+  }
+  fs.mkdirSync(rt, { recursive: true });
+  const copiados = [];
+  for (const item of RUNTIME_ITENS) {
+    const src = path.join(PKG_ROOT, item);
+    if (!fs.existsSync(src)) continue;
+    fs.cpSync(src, path.join(rt, item), { recursive: true });
+    copiados.push(item);
+  }
+  return copiados;
 }
 
 // ---------------------------------------------------------------------------
@@ -275,11 +358,11 @@ function runCommand(cmd, args, options = {}) {
   });
 }
 
-async function fetchMasterCode(python, home) {
+async function fetchMasterCode(python, home, cwd) {
   if (python) {
     try {
       const result = spawnSync(python, ["-c", "from app.services.store import get_master_code; print(get_master_code())"], {
-        cwd: PKG_ROOT,
+        cwd: cwd || PKG_ROOT, // default: pacote (install); no run, o .runtime
         encoding: "utf8",
         env: { ...process.env, PRODMAKER_HOME: home },
         windowsHide: true,
@@ -480,6 +563,14 @@ async function commandInstall(flags) {
     await ensurePythonDeps(home, venvPython(home));
   }
 
+  // RUNTIME PERMANENTE (regra inviolável): copia o código do pacote (cache do
+  // npx) para PRODMAKER_HOME/.runtime. O `install` NÃO roda o servidor — só
+  // prepara o ambiente e encerra, liberando o npx na hora (fim do EBUSY).
+  const rt = runtimeDir(home);
+  console.log(`Isolando o runtime em ${rt} ...`);
+  const copiados = prepararRuntime(rt);
+  console.log(`Runtime pronto (${copiados.join(", ")}).`);
+
   console.log("");
   console.log("Instalação concluída. Para iniciar:");
   console.log("  npx --yes @danhachuel/prodmaker");
@@ -504,8 +595,14 @@ async function commandRun() {
     console.error("Python não encontrado. Rode: prodmaker install");
     process.exit(1);
   }
-  if (!fs.existsSync(path.join(APP_DIR, "main.py"))) {
-    console.error("Backend não encontrado (app/main.py).");
+  // RUNTIME PERMANENTE (regra inviolável): o servidor roda de .runtime, NUNCA
+  // do cache do npx (arquivos travados = EBUSY na atualização). O storage
+  // (banco, logs, chaves) continua na RAIZ do PRODMAKER_HOME — nenhum dado do
+  // usuário vive dentro do .runtime.
+  const rt = runtimeDir(home);
+  if (!fs.existsSync(path.join(rt, "app", "main.py"))) {
+    console.error("Runtime não encontrado em " + rt);
+    console.error("Rode primeiro: npx --yes @danhachuel/prodmaker install");
     process.exit(1);
   }
 
@@ -526,7 +623,7 @@ async function commandRun() {
         : ["-m", "app.main"];
 
   console.log("Iniciando ProdMaker...");
-  const masterCode = await fetchMasterCode(python, home);
+  const masterCode = await fetchMasterCode(python, home, rt); // lê o código do .runtime
   // A URL só é impressa DEPOIS de o servidor estar ouvindo (ver waitReady no
   // spawn). Imprimir a caixa de URL antes causava "Failed to fetch" e
   // ERR_CONNECTION_REFUSED no navegador durante o boot (2-5s de import do
@@ -554,7 +651,7 @@ async function commandRun() {
 
   const startPython = () => {
     child = spawn(daemonPython(python), pythonArgs, {
-      cwd: PKG_ROOT,
+      cwd: rt, // RUNTIME PERMANENTE: executa de .runtime, nunca do cache do npx
       detached: true, // grupo PROPRIO: imune ao CTRL_C_EVENT do console (0xC000013A)
       creationFlags: CREATE_NEW_PROCESS_GROUP, // 0x00000200 — filhos NAO herdem sinais do terminal
       windowsHide: true, // CREATE_NO_WINDOW: nunca abre janela de CMD
@@ -646,6 +743,7 @@ async function commandRun() {
   printUrlBox(port, masterCode);
   if (pronto) {
     console.log("Servidor em grupo de processos PROPRIO (imune a CTRL_C fantasma do MobaXterm).");
+    console.log("Runtime permanente: " + rt + " (nunca do cache do npx)");
     if (process.platform === "win32") {
       console.log("URL: http://localhost:" + port);
       console.log("CTRL+C aqui NAO encerra (protecao anti-sinal-espurio: perder o foco nao derruba).");
@@ -780,9 +878,12 @@ async function commandDoctor() {
     const base = findSystemPython();
     console.log(`Python do sistema: ${base || "não encontrado"}`);
   }
-  console.log(`Backend (app/main.py): ${fs.existsSync(path.join(APP_DIR, "main.py")) ? "OK" : "FALTANDO"}`);
-  const dist = path.join(PKG_ROOT, "frontend", "dist", "index.html");
-  console.log(`Frontend build (frontend/dist): ${fs.existsSync(dist) ? "OK" : "pendente (Parte 2)"}`);
+  // RUNTIME PERMANENTE: o servidor roda de .runtime — o doctor confirma o que
+  // o `run` vai usar (não o cache do npx).
+  const rt = runtimeDir(home);
+  console.log(`Runtime (.runtime): ${fs.existsSync(path.join(rt, "app", "main.py")) ? "OK" : "FALTA (rode install)"}`);
+  const dist = path.join(rt, "frontend", "dist", "index.html");
+  console.log(`Frontend build (.runtime/frontend/dist): ${fs.existsSync(dist) ? "OK" : "pendente (rode install)"}`);
   const port = await pickPort(DEFAULT_PORT);
   console.log(`Porta ${DEFAULT_PORT}: ${port === DEFAULT_PORT ? "livre" : "ocupada"}`);
 }
