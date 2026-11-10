@@ -1,18 +1,29 @@
 """Teste de CI — regra inviolável da arquitetura do launcher (Windows/MobaXterm).
 
 Lê o `scripts/cli.mjs` e falha se qualquer proteção contra o "app encerra
-sozinho" for removida:
+sozinho" / "janela preta de CMD" for removida. Modelo PandaNews (portado):
 
-1. Trava DEFINITIVA (readline): `readline.createInterface({ input: process.stdin,
-   output: process.stdout })` é o que segura o Node no terminal — o MobaXterm
-   (pseudo-terminal) encerra o Node se ele NÃO estiver escutando ativamente o
-   stdin. No `rl.on('close')` (terminal fechado) o launcher mata o Python e sai.
-2. Absorção de sinais: SIGINT/SIGHUP são ABSORVIDOS no Windows (sinal espúrio do
-   MobaXterm ao perder foco/minimizar não pode derrubar o launcher).
-3. Guarda da consola: `guardConsoleStream` absorve EPIPE (terminal fechado) e
-   espelha os logs em arquivo.
-4. Isolamento de workers: filhos sobem com CREATE_NEW_PROCESS_GROUP (0x00000200) —
-   não herdam os sinais do terminal.
+1. TRAVA DO LAUNCHER = socket HTTP REAL: `http.createServer().listen(UI_PORT)`
+   serve `.runtime/frontend/dist` e proxiia `/api`, `/legal`, `/pages` e `/track`
+   para o daemon Python. É o listen que segura o Node no terminal — NUNCA
+   `setInterval`/`await new Promise(() => {})`/`readline` (todos falharam no PTY
+   do MobaXterm, que desanexa ou mata o processo).
+2. DAEMON ISOLADO: o Python sobe com `detached: true` +
+   `creationFlags: CREATE_NEW_PROCESS_GROUP (0x00000200)` + `windowsHide: true` +
+   `stdio: ['ignore', logFd, logFd]` (storage/logs/app.log) + `child.unref()` —
+   fechar/minimizar/perder o foco do terminal não derruba o servidor.
+3. BINÁRIO BASE + PYTHONPATH (Windows): o `venv/Scripts/python.exe` é um
+   redirecionador cujo processo NETO nasce sem as flags de ocultação e abre um
+   console novo (a janela preta). Sobe-se o interpretador base (lido do
+   `venv/pyvenv.cfg`) com o site-packages do venv no `PYTHONPATH`.
+4. LOCK GLOBAL `storage/prodmaker.pid`: o `run` mata instâncias antigas (PIDs do
+   lock + donos das portas via netstat) antes de subir a nova; o `stop` mata
+   launcher e daemon com `taskkill /PID /F /T` SILENCIOSO (windowsHide + ignore).
+5. ABSORÇÃO DE SINAIS: SIGINT/SIGHUP absorvidos no Windows (sinal espúrio do
+   MobaXterm ao perder foco/minimizar não pode derrubar nada).
+6. GUARDA DA CONSOLA: `guardConsoleStream` absorve EPIPE (console fechado).
+7. WATCHDOG COM TETO: reergue o daemon em quedas silenciosas, no máximo
+   MAX_REINICIOS vezes (sem loop infinito de spawns).
 
 Roda sozinho:  python tests/test_launcher_keepalive.py
 Roda no pytest: pytest tests/test_launcher_keepalive.py
@@ -28,50 +39,112 @@ def _conteudo() -> str:
         return handle.read()
 
 
-def test_trava_readline_e_isolation():
+# ---------------------------------------------------------------------------
+# 1) A trava do launcher é um socket HTTP real (nunca timer/promise/readline)
+# ---------------------------------------------------------------------------
+
+def test_trava_e_http_listen_real():
     content = _conteudo()
-
-    # (1) Trava definitiva: readline ouvindo o terminal (stdin/stdout).
-    assert "readline.createInterface" in content, "Trava readline (leitura do terminal) removida!"
-    assert "input: process.stdin" in content, "Readline nao escuta o stdin!"
-    assert "output: process.stdout" in content, "Readline nao escreve no terminal!"
-    assert "rl.on(\"close\"" in content, "Handler de fechamento do readline (terminal fechou) removido!"
-    # (2) Isolamento do worker (grupo proprio - imune ao CTRL_C do console).
-    assert "0x00000200" in content or "CREATE_NEW_PROCESS_GROUP" in content, "Isolamento removido!"
-    # (3) Guarda da consola (EPIPE).
-    assert "guardConsoleStream(process.stdout)" in content, "Guarda do stdout removida!"
-    assert "guardConsoleStream(process.stderr)" in content, "Guarda do stderr removida!"
+    assert "createServer" in content, "Servidor HTTP do launcher removido!"
+    assert ".listen(" in content, "listen do socket HTTP removido — o terminal volta ao prompt!"
+    # as travas que falharam no PTY do MobaXterm NÃO podem voltar
+    assert "readline.createInterface" not in content, "Trava readline (falhou no PTY) reintroduzida!"
+    assert "await new Promise(() => {})" not in content, "Trava promise infininta reintroduzida!"
+    assert "keepAliveTimer" not in content, "Timer keep-alive como trava reintroduzido!"
 
 
-def test_close_do_readline_encerra_o_servidor():
-    """Terminal fechado (readline close) DEVE encerrar o Python e sair (sem orfao)."""
+def test_ui_serve_dist_e_proxyia_api():
+    """A UI (Node) serve o frontend buildado e encaminha as rotas do backend."""
     content = _conteudo()
-    assert "Terminal fechado. Encerrando" in content, "Mensagem de encerramento no close removida!"
-    assert "killChild()" in content, "killChild (matar o Python) nao usado no close!"
-    assert "process.exit(0)" in content, "Saida limpa no close do readline removida!"
+    assert "httpRequest" in content, "Proxy HTTP para o daemon Python removido!"
+    assert '"/api"' in content, "Proxy de /api removido!"
+    assert '"/legal"' in content, "Proxy de /legal removido!"
+    assert '"/pages"' in content, "Proxy de /pages removido!"
+    assert '"/track"' in content, "Proxy de /track (pixel) removido!"
+    assert "index.html" in content, "SPA fallback (index.html) removido — rotas do React Router quebrariam!"
+    assert "frontend" in content and "dist" in content, "Servidor do frontend/dist removido!"
+    assert "API_PORT_DEFAULT" in content, "Porta da API (daemon Python) removida!"
 
+
+# ---------------------------------------------------------------------------
+# 2) Daemon Python isolado do terminal
+# ---------------------------------------------------------------------------
+
+def test_daemon_detached_unref_stdio_arquivo():
+    content = _conteudo()
+    assert "detached: true" in content, "detached removido — o Python morreria com o terminal!"
+    assert "windowsHide: true" in content, "windowsHide removido — voltam as janelas de CMD!"
+    assert 'stdio: ["ignore", logFd, logFd]' in content, "stdio em arquivo (app.log) removido!"
+    assert ".unref()" in content, "unremovido — o launcher e o daemon morreriam juntos!"
+    assert "cwd: rt" in content, "Daemon não executa do .runtime!"
+
+
+def test_python_base_com_pythonpath():
+    """Windows: binário BASE (pyvenv.cfg) + site-packages no PYTHONPATH."""
+    content = _conteudo()
+    assert "pyvenv.cfg" in content, "Leitura do Python base (pyvenv.cfg) removida!"
+    assert "PYTHONPATH" in content, "PYTHONPATH do venv removido — o base não acha as dependências!"
+    assert "pythonBaseBin" in content, "Função do binário base removida!"
+
+
+# ---------------------------------------------------------------------------
+# 3) Lock global + kill silencioso
+# ---------------------------------------------------------------------------
+
+def test_lock_global_prodmaker_pid():
+    content = _conteudo()
+    assert "prodmaker.pid" in content, "Lock global storage/prodmaker.pid removido!"
+    assert "escreverPidGlobal" in content, "Escrita do lock removida!"
+    assert "lerPidGlobal" in content, "Leitura do lock removida!"
+
+
+def test_stop_mata_com_taskkill_silencioso():
+    content = _conteudo()
+    assert "taskkill" in content, "taskkill removido do stop!"
+    assert '["/PID", String(pid), "/F", "/T"]' in content, "taskkill /PID /F /T removido!"
+    assert "commandStop" in content, "Comando stop removido!"
+
+
+def test_run_mata_instancias_antigas():
+    content = _conteudo()
+    assert "matarInstanciasAntigas" in content, "Kill preventivo de instâncias antigas removido!"
+    assert "pidDaPorta" in content, "Varredura de portas (netstat) removida!"
+
+
+# ---------------------------------------------------------------------------
+# 4) Proteções invioláveis originais
+# ---------------------------------------------------------------------------
 
 def test_sinais_absorvidos_no_windows():
-    """No Windows, SIGINT e SIGHUP NAO podem encerrar o launcher (sinal espurio)."""
     content = _conteudo()
-    assert "ABSORVIDO" in content, "Absorcao de sinais (Windows) removida!"
-    assert "SIGINT no Windows" in content, "Absorcao do SIGINT no Windows removida!"
-    assert "SIGHUP no Windows" in content, "Absorcao do SIGHUP no Windows removida!"
+    assert "SIGINT no Windows" in content, "Absorção do SIGINT no Windows removida!"
+    assert "SIGHUP no Windows" in content, "Absorção do SIGHUP no Windows removida!"
 
 
-def test_comando_stop_disponivel():
-    """O encerramento real no Windows vem de `prodmaker stop`/taskkill."""
+def test_guarda_da_consola_e_isolamento():
     content = _conteudo()
-    assert "commandStop" in content, "Comando stop removido!"
-    assert '"stop"' in content or "'stop'" in content, "Comando stop nao registrado no dispatcher!"
+    assert "guardConsoleStream(process.stdout)" in content, "Guarda do stdout removida!"
+    assert "guardConsoleStream(process.stderr)" in content, "Guarda do stderr removida!"
+    assert "0x00000200" in content or "CREATE_NEW_PROCESS_GROUP" in content, "Isolamento de processos removido!"
+
+
+def test_watchdog_com_teto():
+    content = _conteudo()
+    assert "MAX_REINICIOS" in content, "Teto de reinícios do watchdog removido (loop infinito de spawns)!"
 
 
 if __name__ == "__main__":
     testes = [
-        test_trava_readline_e_isolation,
-        test_close_do_readline_encerra_o_servidor,
+        test_trava_e_http_listen_real,
+        test_ui_serve_dist_e_proxyia_api,
+        test_daemon_detached_unref_stdio_arquivo,
+        test_python_base_com_pythonpath,
+        test_lock_global_prodmaker_pid,
+        test_stop_mata_com_taskkill_silencioso,
+        test_run_mata_instancias_antigas,
         test_sinais_absorvidos_no_windows,
-        test_comando_stop_disponivel,
+        test_guarda_da_consola_e_isolamento,
+        test_watchdog_com_teto,
     ]
     falhas = 0
     for teste in testes:

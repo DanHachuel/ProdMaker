@@ -3,6 +3,57 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.51 — 2026-11-10
+
+- **HOTFIX DEFINITIVO DE ARQUITETURA — portado o modelo do PandaNews (que nunca
+  morre no MobaXterm): launcher e servidor têm ciclos de vida SEPARADOS.**
+- **Causa raiz (dupla, medida no PandaNews):**
+  1. no MobaXterm (PTY do Windows) o terminal desanexa ou mata o processo Node —
+     `setInterval`, `Promise` infinita e `readline` falharam justamente porque
+     tentavam "lutar" contra o terminal (nenhum handle real para segurar);
+  2. o `venv/Scripts/python.exe` é um **redirecionador**: ele re-executa o
+     interpretador real e o processo **neto** nasce SEM as flags de ocultação do
+     pai — o Windows aloca um **console novo** (a janela preta de CMD).
+- **Solução (arquitetura PandaNews, agora no ProdMaker):**
+  1. **Daemon Python isolado:** `spawn` com `detached: true` +
+     `creationFlags: CREATE_NEW_PROCESS_GROUP (0x00000200)` + `windowsHide: true`
+     + `stdio: ['ignore', logFd, logFd]` (logs em `storage/logs/app.log`) +
+     `child.unref()`. Fechar/minimizar/perder o foco **não** derruba o servidor.
+  2. **Binário base + PYTHONPATH (Windows):** o Python base é lido do
+     `venv/pyvenv.cfg` e o `site-packages` do venv entra no `PYTHONPATH` — um
+     único processo, zero console novo (fim da janela preta).
+  3. **Launcher seguro por socket HTTP REAL:** `http.createServer().listen(8188)`
+     serve `.runtime/frontend/dist` (com SPA fallback para as rotas do React
+     Router) e encaminha `/api`, `/legal`, `/pages` e `/track` para o daemon
+     Python (porta 8189, com fallback automático). Nenhum timer/promise/readline.
+  4. **Lock global `storage/prodmaker.pid`** (JSON: launcher + backend + portas):
+     o `stop` mata os PIDs registrados **e** quem estiver dono das portas
+     (netstat), sempre com `taskkill /PID /F /T` silencioso (`windowsHide` +
+     `stdio: ignore`); o `run` mata instâncias antigas antes de subir a nova.
+  5. **Watchdog com teto:** 3 leituras ruins consecutivas reerguem o daemon
+     (máximo 3 vezes; reaproveita instância viva do lock antes de subir outra) —
+     sem loop infinito de spawns.
+- **API em porta própria (8189):** a UI (8188) faz proxy — a URL que o usuário
+  abre não muda; rotas profundas do SPA e assets continuam servidos normalmente.
+- Mantidas todas as proteções invioláveis: absorção de SIGINT/SIGHUP no Windows,
+  `guardConsoleStream` (anti-EPIPE), Runtime Permanente (`.runtime`, com
+  `storage/` na raiz do home), `install` sem rodar servidor. Compatibilidade:
+  PID files antigos (`state/python.pid`, `state/launcher.pid`) ainda são mortos e
+  removidos pelo `stop`/`run`/`install`.
+- **Regra 1 e REGRA ZERO TERMINAL do AGENTS.md reescritas** (arquitetura
+  PandaNews + binário base) e **teste de CI `tests/test_launcher_keepalive.py`
+  reescrito** (10 verificações: listen HTTP como trava, daemon
+  detached/unref/stdio-em-arquivo, binário base + PYTHONPATH, lock + stop
+  silencioso, kill de instâncias antigas, watchdog com teto) — quebrar o modelo
+  aborta o job e o npm não publica.
+- Testado ponta a ponta no sandbox (stdin não-tty, como o CI): run → box + Node
+  VIVO segurando o terminal pelo `http.listen` + UI 200 em 8188 + `/api/health`
+  200 via proxy + SPA fallback 200 → matar o launcher (simulando fechar a janela)
+  mantém o daemon NO AR (8189 responde) → segundo `run` mata a instância antiga
+  pelo lock/varredura → `stop` derruba launcher e daemon, libera as portas e
+ remove o lock → doctor ok.
+- Bump: `0.1.51` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.50 — 2026-11-10
 
 - **HOTFIX DEFINITIVO — trava do launcher via `readline` (fim do "encerra sozinho" no MobaXterm/PTY).**

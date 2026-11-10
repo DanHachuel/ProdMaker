@@ -3,11 +3,11 @@
  * REGRA ZERO: este launcher NUNCA abre o navegador. Apenas imprime a URL.
  */
 import { spawn as nodeSpawn, spawnSync } from "node:child_process";
-import readline from "node:readline";
 import { createRequire } from "node:module";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
+import { createServer, request as httpRequest } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -29,7 +29,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.50";
+const APP_VERSION = "0.1.51";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -71,9 +71,20 @@ const RUNTIME_ITENS = ["app", "frontend/dist", "seed", "legal", "requirements.tx
 // e processos com o .runtime na linha de comando) — sem isso a cópia falha com
 // EBUSY. Só mata processos do NOSSO caminho (nunca de outros projetos).
 function matarProcessosDoRuntime(rt) {
+  const home = path.dirname(rt); // rt = home/.runtime
+  // 0) LOCK GLOBAL (launcher + daemon): são eles que seguram o .runtime aberto.
+  try {
+    const lock = lerPidGlobal(home);
+    if (lock) {
+      for (const pid of [lock.launcher, lock.backend]) {
+        if (pid && pid !== process.pid) matarArvore(pid);
+      }
+    }
+  } catch {}
+  matarPidLegados(home);
   // 1) PID file do launcher (evita que o supervisor reerga o servidor).
   try {
-    const pidFile = path.join(rt, "..", "storage", "state", "launcher.pid");
+    const pidFile = path.join(home, "storage", "state", "launcher.pid");
     const pid = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, "utf8").trim() : "";
     if (pid) {
       if (process.platform === "win32") {
@@ -83,26 +94,30 @@ function matarProcessosDoRuntime(rt) {
       }
     }
   } catch {}
-  // 2) Porta do servidor (faixa completa do pickPort) — o Python sempre escuta.
+  // 2) Portas do servidor — o daemon Python escuta na porta da API e o launcher
+  //    na da UI: as DUAS faixas são varridas (silencioso, windowsHide).
   try {
-    const home = path.dirname(rt); // rt = home/.runtime
     const settingsPath = path.join(home, "storage", "state", "settings.json");
     let preferred = DEFAULT_PORT;
     try {
       const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
       if (Number.isInteger(settings.port)) preferred = settings.port;
     } catch {}
-    for (let port = preferred; port <= preferred + 11; port += 1) {
-      killPortProcess(port);
+    const apiBase = preferred === API_PORT_DEFAULT ? API_PORT_DEFAULT + PORT_SCAN : API_PORT_DEFAULT;
+    for (const base of [preferred, apiBase]) {
+      for (let port = base; port < base + PORT_SCAN; port += 1) {
+        killPortProcess(port);
+      }
     }
   } catch {}
-  // 3) Varredura por linha de comando (pega processos que perderam a porta).
+  // 3) Varredura por linha de comando (pega processos que perderam a porta):
+  //    o caminho do .runtime OU o entry point do servidor (-m app.main).
   if (process.platform === "win32") {
     try {
       spawnSync(
         "powershell",
         ["-NoProfile", "-Command",
-          `Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%${rt}%'" | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }`],
+          `Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%${rt}%' OR CommandLine LIKE '%-m app.main%'" | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }`],
         { stdio: "ignore", windowsHide: true }
       );
     } catch {}
@@ -206,15 +221,17 @@ guardConsoleStream(process.stderr);
 
 let controlledStop = false;
 
-// beforeExit = o event loop ESVASIOU. No modelo daemon, `run` sai via process.exit
-// (não passa por aqui); este registro é SILENCIOSO (só arquivo) p/ não poluir install/doctor/stop.
+// beforeExit = o event loop ESVASIOU (não deve acontecer com o listen da UI no
+// ar). Registro SILENCIOSO (só arquivo) p/ não poluir install/doctor/stop.
 process.on("beforeExit", (code) => {
   launcherDbg(`[NODE] beforeExit (event loop vazio) code=${code}`);
 });
 process.on("exit", (code) => {
-  // O terminal NUNCA fecha sem imprimir o motivo. Ctrl+C (matarAgora→controlledStop)
-  // tem uma linha breve; qualquer OUTRA saída mostra o código (a pista da morte).
-  const m = controlledStop ? "[LAUNCHER] Encerrado - servidor finalizado junto com o terminal." : `[LAUNCHER] O Node está encerrando. Código: ${code}`;
+  // O terminal NUNCA fecha sem imprimir o motivo. Modelo PandaNews: launcher e
+  // servidor têm vidas SEPARADAS — a saída do Node NÃO derruba o daemon.
+  const m = controlledStop
+    ? "[LAUNCHER] Encerrado - o servidor (daemon) foi finalizado junto."
+    : `[LAUNCHER] Launcher encerrado (codigo ${code}) - o servidor DAEMON segue no ar. Para parar: prodmaker stop`;
   launcherDbg(m);
   // Só no `run` a mensagem de encerramento importa (trava absoluta). install/stop/
   // doctor têm mensagens próprias — a saída natural não vira o ruído
@@ -272,21 +289,22 @@ function venvPython(home) {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
-// Quantos processos escutam na porta (Windows) — o `stop` usa para reportar.
-function portListeners(port) {
-  if (process.platform !== "win32") return 0;
+
+// Um processo está vivo? (usado pelo doctor para reportar o daemon).
+function pidVivo(pid) {
+  if (!pid) return false;
   try {
-    const res = spawnSync("cmd", ["/c", "netstat -ano | findstr :" + port + " | findstr LISTENING"], { encoding: "utf8", windowsHide: true });
-    const pids = new Set();
-    for (const line of (res.stdout || "").split(/\r?\n/)) {
-      const m = line.match(/(\d+)\s*$/);
-      if (m) pids.add(m[1]);
+    if (process.platform === "win32") {
+      const r = spawnSync("powershell", ["-NoProfile", "-Command", `if (Get-Process -Id ${pid} -ErrorAction SilentlyContinue) { "vivo" }`], { encoding: "utf8", windowsHide: true });
+      return (r.stdout || "").includes("vivo");
     }
-    return pids.size;
+    process.kill(Number(pid), 0);
+    return true;
   } catch {
-    return 0;
+    return false;
   }
 }
+
 // Mata qualquer processo escutando na porta (Windows) antes de subir — evita que
 // um Python fantasma de execucao anterior ocupe a porta e derrube o novo.
 function killPortProcess(port) {
@@ -303,14 +321,382 @@ function killPortProcess(port) {
     }
   } catch {}
 }
-// Spawn DETACHED no Windows: use pythonw.exe (subsistema GUI) para NAO alocar
-// console/janela de CMD (python.exe + detach abria janela). Fallback: python.exe.
-function daemonPython(py) {
-  if (process.platform === "win32" && typeof py === "string" && py.toLowerCase().endsWith("python.exe")) {
-    const pyw = py.slice(0, py.length - "python.exe".length) + "pythonw.exe";
-    if (fs.existsSync(pyw)) return pyw;
+// ---------------------------------------------------------------------------
+// ARQUITETURA PandaNews (portada) — DAEMON isolado + UI servida pelo Node.
+//
+// 1) O Python sobe como DAEMON: grupo de processos próprio (detached +
+//    CREATE_NEW_PROCESS_GROUP), sem console (windowsHide), stdio em
+//    storage/logs/app.log e unref — a morte do launcher não o derruba e
+//    vice-versa. Fechar/minimizar/perder o foco do MobaXterm não mata nada.
+// 2) O launcher (Node) NÃO é segurado por setInterval/Promise/readline (todos
+//    falharam no PTY do MobaXterm): ele fica no ar porque tem um socket HTTP
+//    REAL em listen — o servidor de UI (.runtime/frontend/dist + proxy /api).
+// 3) Windows: binário BASE do venv + PYTHONPATH do venv — evita o redirector
+//    do venv, cujo processo neto abria um console novo (a janela preta de CMD).
+// 4) Lock global storage/prodmaker.pid: `stop` e o kill preventivo do `run`
+//    matam o launcher e o daemon registrados (taskkill /PID /F /T silencioso).
+// ---------------------------------------------------------------------------
+
+const API_PORT_DEFAULT = 8189; // porta do daemon Python (a UI encaminha /api pra cá)
+const PORT_SCAN = 12; // faixa de fallback de portas (UI e API)
+const CREATE_NEW_PROCESS_GROUP = 0x00000200; // flag Win32 — filhos NAO herdam os sinais do terminal
+const PROXY_PREFIXES = ["/api", "/legal", "/pages", "/track"]; // rotas que pertencem ao backend
+const FALHAS_PARA_REINICIAR = 3; // leituras ruins CONSECUTIVAS antes de reiniciar o daemon
+const MAX_REINICIOS = 3; // teto de reinícios: sem ele, backend que não sobe = loop infinito
+
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".txt": "text/plain; charset=utf-8",
+  ".xml": "application/xml",
+  ".webmanifest": "application/manifest+json",
+};
+
+// Site-packages do venv (Windows: venv/Lib/site-packages; Unix: lib/pythonX.Y/...).
+function venvSitePackagesDir(home) {
+  if (process.platform === "win32") {
+    const direct = path.join(home, "venv", "Lib", "site-packages");
+    return fs.existsSync(direct) ? direct : null;
   }
-  return py;
+  const lib = path.join(home, "venv", "lib");
+  try {
+    for (const entry of fs.readdirSync(lib)) {
+      const candidate = path.join(lib, entry, "site-packages");
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  } catch {}
+  return null;
+}
+
+// Binário BASE do venv, lido do pyvenv.cfg (home/executable). No Windows o
+// `venv/Scripts/python.exe` é um REDIRECIONADOR: ele re-executa o interpretador
+// real e o processo NETO nasce SEM as flags de ocultação do pai — o Windows
+// aloca um console NOVO (a janela preta). Subindo o base com o site-packages no
+// PYTHONPATH: um único processo, nenhum console novo, mesmas dependências.
+// No Unix o `venv/bin/python` é symlink do base (sem redirector): usa-se o venv.
+function pythonBaseBin(home) {
+  if (process.platform !== "win32") return null;
+  try {
+    const cfg = path.join(home, "venv", "pyvenv.cfg");
+    if (!fs.existsSync(cfg)) return null;
+    const texto = fs.readFileSync(cfg, "utf8");
+    const m = texto.match(/^\s*(?:home|executable|base_executable)\s*=\s*(.+)$/im);
+    if (!m) return null;
+    const raw = m[1].trim().replace(/^["']|["']$/g, "");
+    const dir = /python\.exe$/i.test(raw) ? path.dirname(raw) : raw;
+    const candidate = path.join(dir, "python.exe");
+    return fs.existsSync(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+// Binário Python do servidor: BASE (Windows, dependências via PYTHONPATH) ou o
+// próprio venv (Unix). Fallback: python do sistema.
+function pythonBin(home) {
+  const base = pythonBaseBin(home);
+  if (base) return base;
+  return venvPython(home) || findSystemPython();
+}
+
+// Ambiente do Python: home, porta da API e unbuffered. Quando o binário NÃO é
+// o do venv (base ou sistema), o site-packages do venv entra no PYTHONPATH.
+function pythonEnv(home, port) {
+  const env = { ...process.env, PRODMAKER_HOME: home, PRODMAKER_UNBUFFERED: "1" };
+  if (port) env.PRODMAKER_PORT = String(port);
+  const venv = venvPython(home);
+  const bin = pythonBin(home);
+  if (venv && (!bin || path.resolve(bin) !== path.resolve(venv))) {
+    const site = venvSitePackagesDir(home);
+    if (site) env.PYTHONPATH = env.PYTHONPATH ? site + path.delimiter + env.PYTHONPATH : site;
+  }
+  return env;
+}
+
+// Argumentos do entry point (app.main). O launcher `py` do Windows precisa do -3.
+function pythonArgsFor(python) {
+  return process.platform === "win32" && python === "py" ? ["-3", "-m", "app.main"] : ["-m", "app.main"];
+}
+
+// ---------------------------------------------------------------------------
+// LOCK GLOBAL — PRODMAKER_HOME/storage/prodmaker.pid (modelo PandaNews).
+// O servidor é daemon: sobrevive ao terminal e à própria sessão do launcher. Sem
+// um registro de quem está vivo, cada `run` empilhava outra instância (porta
+// presa, PID apontando para o processo errado). O lock guarda o launcher E o
+// backend: `stop` e o kill preventivo do `run` precisam dos dois. Lock
+// corrompido NUNCA pode impedir o arranque.
+// ---------------------------------------------------------------------------
+function pidGlobalPath(home) {
+  return storagePath(home, "prodmaker.pid");
+}
+
+function lerPidGlobal(home) {
+  try {
+    const dados = JSON.parse(fs.readFileSync(pidGlobalPath(home), "utf8"));
+    if (!dados || typeof dados !== "object") return null;
+    return {
+      launcher: Number.isInteger(dados.launcher) ? dados.launcher : null,
+      backend: Number.isInteger(dados.backend) ? dados.backend : null,
+      port: Number.isInteger(dados.port) ? dados.port : null,
+      apiPort: Number.isInteger(dados.apiPort) ? dados.apiPort : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function escreverPidGlobal(home, launcher, backend, uiPort, apiPort) {
+  try {
+    fs.writeFileSync(
+      pidGlobalPath(home),
+      JSON.stringify({ launcher, backend, port: uiPort, apiPort, criado: new Date().toISOString() }, null, 2),
+      "utf8"
+    );
+  } catch {
+    /* melhor esforço — o lock nunca deve derrubar o arranque */
+  }
+}
+
+function limparPidGlobal(home) {
+  try {
+    fs.unlinkSync(pidGlobalPath(home));
+  } catch {
+    /* melhor esforço */
+  }
+}
+
+// PID files de versões anteriores (compatibilidade): daemon-exit e readline.
+function matarPidLegados(home) {
+  for (const arquivo of [storagePath(home, "state", "python.pid"), storagePath(home, "state", "launcher.pid")]) {
+    try {
+      if (!fs.existsSync(arquivo)) continue;
+      const pid = Number(fs.readFileSync(arquivo, "utf8").trim());
+      if (pid && pid !== process.pid) matarArvore(pid);
+      fs.unlinkSync(arquivo);
+    } catch {}
+  }
+}
+
+// Mata a árvore de processos por PID, SEMPRE em silêncio (windowsHide + stdio
+// ignore + detached): um taskkill que piscasse uma janela de console negaria a
+// REGRA ZERO do terminal. No Windows `taskkill /PID /F /T` derruba o processo e
+// os filhos; no Unix o sinal negativo mata o grupo inteiro.
+function matarArvore(pid) {
+  if (!pid) return;
+  try {
+    if (process.platform === "win32") {
+      spawnSync("taskkill", ["/PID", String(pid), "/F", "/T"], { windowsHide: true, detached: true, stdio: "ignore" });
+    } else {
+      process.kill(-pid, "SIGKILL");
+    }
+  } catch {
+    /* processo já não existia */
+  }
+}
+
+// PID dono de uma porta em LISTEN (Windows, netstat silencioso; Unix: null).
+function pidDaPorta(port) {
+  if (process.platform !== "win32") return null;
+  try {
+    const res = spawnSync("cmd", ["/c", "netstat -ano | findstr :" + port + " | findstr LISTENING"], { encoding: "utf8", windowsHide: true });
+    for (const linha of (res.stdout || "").split(/\r?\n/)) {
+      const m = linha.match(/(\d+)\s*$/);
+      if (m && Number(m[1]) > 0) return Number(m[1]);
+    }
+  } catch {}
+  return null;
+}
+
+// Duas redes de segurança antes de subir uma nova instância: os PIDs do lock
+// global (e dos PID files legados) e quem estiver dono das portas candidatas
+// (UI e API) — o netstat apanha o zombie que o arquivo perdeu. NUNCA mata o
+// próprio processo: dois launchers a arrancar não podem suicidar-se mutuamente.
+async function matarInstanciasAntigas(home, uiBase, apiBase) {
+  let mortos = 0;
+  const lock = lerPidGlobal(home);
+  if (lock) {
+    for (const pid of [lock.launcher, lock.backend]) {
+      if (pid && pid !== process.pid) {
+        matarArvore(pid);
+        mortos += 1;
+      }
+    }
+  }
+  for (const arquivo of [storagePath(home, "state", "python.pid"), storagePath(home, "state", "launcher.pid")]) {
+    try {
+      if (!fs.existsSync(arquivo)) continue;
+      const pid = Number(fs.readFileSync(arquivo, "utf8").trim());
+      if (pid && pid !== process.pid) {
+        matarArvore(pid);
+        mortos += 1;
+      }
+      fs.unlinkSync(arquivo);
+    } catch {}
+  }
+  for (const base of [uiBase, apiBase]) {
+    for (let port = base; port < base + PORT_SCAN; port += 1) {
+      const dono = pidDaPorta(port);
+      if (dono && dono !== process.pid) {
+        matarArvore(dono);
+        mortos += 1;
+      }
+    }
+  }
+  limparPidGlobal(home);
+  if (mortos > 0) {
+    console.log(`Encerrando instância anterior (${mortos} processo(s)) antes de iniciar...`);
+    // 1s para o SO liberar as portas e os arquivos do .runtime — sem isto o
+    // bind seguinte pode falhar com EADDRINUSE.
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+// Um daemon já vivo (lido do LOCK GLOBAL) — o watchdog reaproveita em vez de
+// empilhar outra instância (backend duplicado fazia a porta "morrer" pro proxy).
+async function backendJaRodando(home) {
+  const lock = lerPidGlobal(home);
+  if (!lock || !lock.backend || !pidVivo(lock.backend)) return null;
+  const port = lock.apiPort;
+  if (port && (await portaAberta(port))) return { pid: lock.backend, port };
+  return null;
+}
+
+// A porta aceita conexão TCP? (probe real — uvicorn ouvindo.)
+function portaAberta(port) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: "127.0.0.1", port });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", () => resolve(false));
+    socket.setTimeout(500, () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
+}
+
+// Encaminha a requisição para o daemon Python (API, /legal, /pages, /track).
+function proxyApi(req, res, apiPort) {
+  const proxied = httpRequest(
+    {
+      hostname: "127.0.0.1",
+      port: apiPort,
+      path: req.url,
+      method: req.method,
+      headers: { ...req.headers, host: `127.0.0.1:${apiPort}` },
+    },
+    (upstream) => {
+      res.writeHead(upstream.statusCode || 502, upstream.headers);
+      upstream.pipe(res);
+    }
+  );
+  proxied.on("error", () => {
+    if (res.headersSent) return;
+    res.writeHead(502, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ detail: `Backend ProdMaker não responde em 127.0.0.1:${apiPort}` }));
+  });
+  req.pipe(proxied);
+}
+
+// Servidor de UI: serve o frontend buildado (.runtime/frontend/dist) e encaminha
+// as rotas do backend. Sem build, TUDO vai para o daemon (que tem o placeholder
+// próprio). Rota sem extensão cai no index.html (SPA/BrowserRouter); asset
+// inexistente dá 404 — nunca mascarar um .js quebrado como HTML.
+function criarUiServer(apiPort, distDir) {
+  const temBuild = fs.existsSync(path.join(distDir, "index.html"));
+  const indexHtml = path.join(distDir, "index.html");
+  return createServer((req, res) => {
+    const alvo = (req.url || "/").split("?")[0];
+    const ehDoBackend = PROXY_PREFIXES.some((p) => alvo === p || alvo.startsWith(p + "/"));
+    if (!temBuild || ehDoBackend) {
+      proxyApi(req, res, apiPort);
+      return;
+    }
+    const filePath = path.normalize(path.join(distDir, alvo === "/" ? "index.html" : alvo.slice(1)));
+    // Path traversal: nada escapa do dist.
+    if (filePath !== distDir && !filePath.startsWith(distDir + path.sep)) {
+      res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Forbidden");
+      return;
+    }
+    let stats = null;
+    try {
+      stats = fs.statSync(filePath);
+    } catch {}
+    if (!stats || !stats.isFile()) {
+      if (path.extname(alvo) === "") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(fs.readFileSync(indexHtml));
+        return;
+      }
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Not found");
+      return;
+    }
+    res.writeHead(200, { "Content-Type": MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream" });
+    res.end(fs.readFileSync(filePath));
+  });
+}
+
+// Coloca a UI para ouvir (com fallback de porta em EADDRINUSE). É ESTE listen
+// que segura o launcher no terminal do MobaXterm — nunca timer/promise/readline.
+async function listenUi(uiPort, apiPort, distDir, limite) {
+  const server = criarUiServer(apiPort, distDir);
+  return new Promise((resolve, reject) => {
+    server.once("error", (err) => {
+      if (err && err.code === "EADDRINUSE" && uiPort < limite) {
+        console.log(`Porta ${uiPort} ocupada - tentando ${uiPort + 1}...`);
+        resolve(listenUi(uiPort + 1, apiPort, distDir, limite));
+        return;
+      }
+      reject(err);
+    });
+    server.listen(uiPort, "127.0.0.1", () => resolve({ server, port: uiPort }));
+  });
+}
+
+// Sobe o daemon Python (app.main) em grupo de processos PRÓPRIO: detached
+// (CREATE_NEW_PROCESS_GROUP), windowsHide (sem janela preta), stdio em FD de
+// arquivo (storage/logs/app.log — o terminal não o controla) e unref (o
+// launcher não morre com o daemon e vice-versa). No Windows: binário BASE +
+// PYTHONPATH do venv (ver pythonBin/pythonEnv).
+function spawnDaemon(home, rt, apiPort) {
+  const bin = pythonBin(home);
+  const logPath = storagePath(home, "logs", "app.log");
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, `--- ${new Date().toISOString()} - iniciando ProdMaker (porta ${apiPort}) ---\n`);
+  } catch {}
+  // stdio por FD: spawn detached no Windows não aceita path, só descritor.
+  const logFd = fs.openSync(logPath, "a");
+  const filho = spawn(bin, pythonArgsFor(bin), {
+    cwd: rt, // RUNTIME PERMANENTE: executa de .runtime, nunca do cache do npx
+    detached: true, // grupo PRÓPRIO: imune ao CTRL_C_EVENT do console (0xC000013A)
+    creationFlags: process.platform === "win32" ? CREATE_NEW_PROCESS_GROUP : 0,
+    windowsHide: true, // CREATE_NO_WINDOW: nunca abre janela de CMD
+    stdio: ["ignore", logFd, logFd], // saída direto no arquivo (append) - não herda console
+    env: pythonEnv(home, apiPort),
+    shell: false,
+  });
+  fs.closeSync(logFd); // o filho tem sua própria cópia herdada
+  filho.unref(); // o Node pode sair sem arrastar o daemon junto
+  return filho;
 }
 function printUrlBox(port, masterCode) {
   const url = `http://localhost:${port}`;
@@ -378,7 +764,7 @@ async function fetchMasterCode(python, home, cwd) {
       const result = spawnSync(python, ["-c", "from app.services.store import get_master_code; print(get_master_code())"], {
         cwd: cwd || PKG_ROOT, // default: pacote (install); no run, o .runtime
         encoding: "utf8",
-        env: { ...process.env, PRODMAKER_HOME: home },
+        env: pythonEnv(home),
         windowsHide: true,
       });
       const value = (result.stdout || "").trim().split(/\r?\n/).pop() || "";
@@ -611,7 +997,9 @@ async function commandRun() {
     if (Number.isInteger(settings.port)) preferred = settings.port;
   } catch {}
 
-  const python = venvPython(home) || findSystemPython();
+  // Python do servidor: binário BASE (Windows) + PYTHONPATH do venv — ver
+  // pythonBaseBin/pythonEnv. (pythonw/redirector do venv abria console novo.)
+  const python = pythonBin(home);
   if (!python) {
     console.error("Python não encontrado. Rode: prodmaker install");
     process.exit(1);
@@ -627,21 +1015,27 @@ async function commandRun() {
     process.exit(1);
   }
 
+  // UI (Node) na porta preferida; API (daemon Python) em porta própria — a UI
+  // encaminha /api pra lá, então a URL que o usuário abre NÃO muda.
   const port = await pickPort(preferred);
   if (!port) {
     console.error(`Nenhuma porta disponível entre ${preferred} e ${preferred + 11}.`);
     process.exit(1);
   }
-  if (port !== preferred) console.log(`Porta ${preferred} ocupada — usando ${port}.`);
+  if (port !== preferred) console.log(`Porta ${preferred} ocupada — UI usando ${port}.`);
+
+  // API: porta fixa 8189 (sai da faixa se colidir com a UI).
+  const apiBase = port === API_PORT_DEFAULT ? API_PORT_DEFAULT + PORT_SCAN : API_PORT_DEFAULT;
+  let apiPort = await pickPort(apiBase);
+  if (!apiPort) {
+    console.error(`Nenhuma porta disponível para a API entre ${apiBase} e ${apiBase + 11}.`);
+    process.exit(1);
+  }
+  if (apiPort !== apiBase) console.log(`Porta ${apiBase} ocupada — API usando ${apiPort}.`);
 
   // Spawn via `python -m app.main` (próprio entry point): permite log persistente
   // em storage/logs/app.log e captura de exceções fatais.
-  const pythonArgs =
-    venvPython(home)
-      ? ["-m", "app.main"]
-      : process.platform === "win32" && python === "py"
-        ? ["-3", "-m", "app.main"]
-        : ["-m", "app.main"];
+  const pythonArgs = pythonArgsFor(python);
 
   console.log("Iniciando ProdMaker...");
   const masterCode = await fetchMasterCode(python, home, rt); // lê o código do .runtime
@@ -650,90 +1044,28 @@ async function commandRun() {
   // ERR_CONNECTION_REFUSED no navegador durante o boot (2-5s de import do
   // FastAPI + abertura do SQLite): o usuário abria o site e nada respondia.
 
-  // PYTHONUNBUFFERED: com stdio em pipe o Python faria buffer de bloco em stdout,
-  // atrasando os logs no proxy/MobaXterm. unbuffered = logs em tempo real.
-  const env = { ...process.env, PRODMAKER_HOME: home, PRODMAKER_PORT: String(port), PYTHONUNBUFFERED: "1" };
-
   // ISOLAMENTO DO GRUPO DE PROCESSOS — fix do STATUS_CONTROL_C_EXIT (0xC000013A).
   // O MobaXterm envia CTRL_C_EVENT ao grupo do console; se o Python estiver no MESMO
-  // grupo, ele morre junto. Solucao: o Python sobe em grupo PROPRIO
-  // (CREATE_NEW_PROCESS_GROUP explicito + detached + pythonw sem janela). O Node
-  // (launcher) medeia: fica vivo (keep-alive 1s + readline), ABSORVE SIGINT/SIGHUP
-  // no Windows (ver absorcao de sinais acima) e o Python tambem ignora Ctrl via
-  // SetConsoleCtrlHandler (app/main.py).
-  const CREATE_NEW_PROCESS_GROUP = 0x00000200; // flag Win32 — filhos NAO herdem os sinais do terminal
-  killPortProcess(port);
+  // grupo, ele morre junto. Solucao (modelo PandaNews): o Python sobe em grupo
+  // PROPRIO (CREATE_NEW_PROCESS_GROUP + detached + windowsHide + stdio em
+  // arquivo), completamente isolado da janela do terminal, e o launcher fica no
+  // ar por um socket HTTP REAL (o servidor de UI) — nunca por timer, promise ou
+  // readline (todos falharam no PTY do MobaXterm). O Python tambem ignora Ctrl
+  // via SetConsoleCtrlHandler (app/main.py).
 
-  let stopping = false;
-  let keepAliveTimer = null;
-  let restarts = 0;
-  let child = null;
-  const MAX_RESTARTS = 3;
-
-  const startPython = () => {
-    child = spawn(daemonPython(python), pythonArgs, {
-      cwd: rt, // RUNTIME PERMANENTE: executa de .runtime, nunca do cache do npx
-      detached: true, // grupo PROPRIO: imune ao CTRL_C_EVENT do console (0xC000013A)
-      creationFlags: CREATE_NEW_PROCESS_GROUP, // 0x00000200 — filhos NAO herdem sinais do terminal
-      windowsHide: true, // CREATE_NO_WINDOW: nunca abre janela de CMD
-      stdio: ["inherit", "pipe", "pipe"], // logs passam pelo proxy do Node pro terminal atual
-      env,
-      shell: false,
-    });
-    launcherDbg(`[RUN] spawn python(grupo proprio) pid=${child.pid} port ${port} (t=${restarts + 1})`);
-    child.stdout?.on("data", (d) => { if (!stopping) process.stdout.write(d); });
-    child.stderr?.on("data", (d) => { if (!stopping) process.stderr.write(d); });
-    child.on("error", (e) => console.error(`[ERRO FATAL] falha ao iniciar o Python: ${e.message}`));
-    child.on("exit", (code, signal) => {
-      console.log(`\n[PYTHON MORREU] Codigo: ${code ?? "null"}, Sinal: ${signal ?? "null"} — ${path.join(home, "storage", "logs", "app.log")}`);
-      launcherDbg(`[CHILD] exit code=${code ?? "null"} signal=${signal ?? "null"}`);
-    });
-    child.on("close", (code) => {
-      if (stopping) return;
-      if (restarts < MAX_RESTARTS) {
-        restarts += 1;
-        console.error(`[ProdMaker] Python caiu (codigo ${code ?? 0}). Reiniciando (${restarts}/${MAX_RESTARTS})...`);
-        launcherDbg(`[RESTART] ${restarts}/${MAX_RESTARTS}`);
-        setTimeout(startPython, 2000);
-        return;
-      }
-      console.error(`[ProdMaker] Python falhou ${MAX_RESTARTS}x. Encerrando — rode npm run debug.`);
-      process.exit(1);
-    });
-  };
-
-  // O filho Python está rodando? (exitCode/signalCode ficam null enquanto vivo)
-  const childVivo = () => Boolean(child && child.exitCode === null && child.signalCode === null);
-
-  const killChild = () => {
-    try {
-      if (child && child.pid && process.platform === "win32") {
-        spawnSync("taskkill", ["/F", "/T", "/PID", String(child.pid)], { stdio: "ignore", shell: false, windowsHide: true });
-      } else if (child && child.pid) {
-        child.kill("SIGKILL");
-      }
-    } catch {}
-  };
-  process.on("exit", killChild); // qualquer saida do Node mata o filho (sem orfao)
-
-  const matarAgora = (code) => {
-    stopping = true;
-    controlledStop = true;
-    if (keepAliveTimer) clearInterval(keepAliveTimer);
-    killChild();
-    launcherDbg(`[STOP] matarAgora(${code ?? 0})`);
-    process.exit(code ?? 0);
-  };
   // -------------------------------------------------------------------------
   // ABSORÇÃO DE SINAIS (regra inviolável do launcher) — o app "encerrava
   // sozinho" no MobaXterm porque a janela perde o foco / é minimizada e o
   // terminal envia SIGINT/SIGHUP ESPÚRIOS: qualquer handler que trate esses
   // sinais como "encerrar" derruba a stack inteira.
   //   • Windows: SIGINT e SIGHUP são ABSORVIDOS (só log) — o launcher NÃO
-  //     morre. O encerramento real é via `prodmaker stop`, fechamento da janela
-  //     (readline close) ou taskkill.
-  //   • Linux/macOS: CTRL+C (SIGINT) encerra normalmente, como esperado.
+  //     morre e o daemon (já isolado) também não.
+  //   • Linux/macOS: CTRL+C (SIGINT) encerra o launcher E o daemon; SIGHUP
+  //     (terminal fechando) NÃO derruba o daemon — ele segue no ar.
+  // Nota: no modelo PandaNews, encerrar o launcher NÃO derruba o servidor — o
+  // encerramento real é sempre via `prodmaker stop` (ou taskkill no PID).
   // -------------------------------------------------------------------------
+  let backendPid = null; // PID do daemon que ESTA sessão iniciou (null = reaproveitado)
   if (process.platform === "win32") {
     process.on("SIGINT", () =>
       launcherDbg("[SIGNAL] SIGINT no Windows — ABSORVIDO (nao encerra; MobaXterm envia sinal espurio ao perder foco)")
@@ -742,86 +1074,133 @@ async function commandRun() {
       launcherDbg("[SIGNAL] SIGHUP no Windows — ABSORVIDO (perda de foco/minimizar nao derruba o servidor)")
     );
     process.on("SIGTERM", () => {
-      launcherDbg("[SIGNAL] SIGTERM — encerrando");
-      matarAgora(0);
+      launcherDbg("[SIGNAL] SIGTERM — encerrando o launcher; o daemon segue no ar (pare com: prodmaker stop)");
+      process.exit(0);
     });
   } else {
     process.on("SIGINT", () => {
-      launcherDbg("[SIGNAL] SIGINT (CTRL+C) — encerrando");
-      matarAgora(0);
-    });
-    process.on("SIGHUP", () => launcherDbg("[SIGNAL] SIGHUP — ignorado (servidor segue)"));
-    process.on("SIGTERM", () => {
-      launcherDbg("[SIGNAL] SIGTERM — encerrando");
-      matarAgora(0);
-    });
-  }
-
-  startPython();
-
-  console.log("Aguardando o servidor ficar pronto...");
-  const pronto = await waitReady(port);
-  printUrlBox(port, masterCode);
-  if (pronto) {
-    console.log("Servidor em grupo de processos PROPRIO (imune a CTRL_C fantasma do MobaXterm).");
-    console.log("Runtime permanente: " + rt + " (nunca do cache do npx)");
-    if (process.platform === "win32") {
-      console.log("URL: http://localhost:" + port);
-      console.log("CTRL+C aqui NAO encerra (protecao anti-sinal-espurio: perder o foco nao derruba).");
-      console.log("Para parar: `prodmaker stop` ou feche esta janela.");
-    } else {
-      console.log("URL: http://localhost:" + port + "  —  CTRL+C encerra limpo; perder o foco NAO derruba.");
-    }
-  } else {
-    console.error("O servidor nao respondeu em 30s. Veja storage/logs/app.log.");
-  }
-
-  // -------------------------------------------------------------------------
-  // TRAVA ABSOLUTA (regra inviolável) — TRÊS mecanismos independentes contra o
-  // "encerra com Código: 0 logo após o box" (event loop que esvaziou):
-  //   (a) timer keep-alive de 1s — o Event Loop nunca esvazia;
-  //   (b) Promise que NUNCA resolve — commandRun não retorna;
-  //   (c) REARME no beforeExit — se o loop esvaziar de todo (stdio do MobaXterm
-  //       sumindo, handles fechando), o handler REAGENDA trabalho e o Node
-  //       CONTINUA. Somados, o processo só morre por `stop`, sinal real ou
-  //       hard-kill — nunca sozinho com código 0.
-  // -------------------------------------------------------------------------
-  // -------------------------------------------------------------------------
-  // TRAVA DEFINITIVA (readline) - regra inviolavel do launcher no MobaXterm/PTY.
-  // O MobaXterm (pseudo-terminal) encerra o Node se ele NAO estiver escutando
-  // ativamente o stdin; setInterval/Promise nao leem o stdin e por isso nao
-  // seguravam o processo la. A interface readline fica ouvindo o terminal: o Node
-  // SO sai quando o terminal e realmente fechado (readline close) ou via
-  // `prodmaker stop` / taskkill. guardConsoleStream (anti-EPIPE) + absorcao de
-  // SIGINT/SIGHUP no Windows + CREATE_NEW_PROCESS_GROUP permanecem (regra inviolavel).
-  // -------------------------------------------------------------------------
-  // PID file: permite ao comando `prodmaker stop` encerrar ESTE launcher.
-  const LAUNCHER_PID_FILE = storagePath(home, "state", "launcher.pid");
-  try {
-    fs.writeFileSync(LAUNCHER_PID_FILE, String(process.pid), "utf8");
-  } catch {}
-  process.on("exit", () => {
-    try {
-      fs.unlinkSync(LAUNCHER_PID_FILE);
-    } catch {}
-  });
-
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  rl.on("close", () => {
-    // O readline detecta o fechamento do terminal. Em terminal real (MobaXterm,
-    // PowerShell, CMD) `process.stdin.isTTY` e true: encerra o Python e sai, limpo.
-    // Em stdin NAO-tty (pipe/redirecionamento/CI) o EOF pode chegar sem o usuario
-    // fechar nada — ai NAO encerra: o launcher segue (para com `prodmaker stop`).
-    launcherDbg("[READLINE] terminal/stdin fechou");
-    if (process.stdin && process.stdin.isTTY) {
-      console.error("\n[LAUNCHER] Terminal fechado. Encerrando...");
-      stopping = true;
+      // CTRL+C EXPLÍCITO do usuário: encerra o launcher E o daemon.
+      launcherDbg("[SIGNAL] SIGINT (CTRL+C) — encerrando launcher e daemon");
       controlledStop = true;
-      killChild();
+      matarArvore(backendPid);
+      limparPidGlobal(home);
       process.exit(0);
+    });
+    process.on("SIGHUP", () => launcherDbg("[SIGNAL] SIGHUP — terminal fechando; daemon mantido no ar (use prodmaker stop)"));
+    process.on("SIGTERM", () => {
+      controlledStop = true;
+      matarArvore(backendPid);
+      limparPidGlobal(home);
+      process.exit(0);
+    });
+  }
+
+  // 1) MATA A INSTÂNCIA ANTERIOR antes de subir a nova (lock global + portas).
+  await matarInstanciasAntigas(home, preferred, apiBase);
+
+  // 2) DAEMON PYTHON — binário base + PYTHONPATH, detached, stdio em
+  //    storage/logs/app.log, unref. Vive isolado do terminal.
+  console.log("Aguardando o servidor ficar pronto...");
+  const filho = spawnDaemon(home, rt, apiPort);
+  backendPid = filho.pid;
+  if (backendPid == null) {
+    console.error("[ERRO FATAL] falha ao iniciar o Python (sem PID).");
+    process.exit(1);
+  }
+  filho.on("error", (e) => console.error(`[ERRO FATAL] falha ao iniciar o Python: ${e.message}`));
+  escreverPidGlobal(home, process.pid, backendPid, port, apiPort);
+  launcherDbg(`[DAEMON] python pid=${backendPid} (porta API ${apiPort}) — lock em ${pidGlobalPath(home)}`);
+
+  const pronto = await waitReady(apiPort);
+
+  // 3) UI (Node) — o listen REAL deste socket é o que segura o launcher no
+  //    terminal do MobaXterm (modelo PandaNews). Serve .runtime/frontend/dist e
+  //    encaminha /api, /legal, /pages e /track para o daemon Python.
+  const distDir = path.join(rt, "frontend", "dist");
+  let ui = null;
+  try {
+    ui = await listenUi(port, apiPort, distDir, preferred + PORT_SCAN);
+  } catch (err) {
+    console.error(`[ERRO FATAL] não foi possível ouvir a porta ${port}: ${err && err.message ? err.message : err}`);
+    console.error("Encerre o processo que a ocupa ou rode `prodmaker stop`.");
+    matarArvore(backendPid);
+    limparPidGlobal(home);
+    process.exit(1);
+  }
+
+  printUrlBox(ui.port, masterCode);
+  if (pronto) {
+    console.log("Servidor Python (daemon) isolado do terminal — pid " + backendPid + " — porta " + apiPort + ".");
+    console.log("UI servida por este launcher em http://127.0.0.1:" + ui.port + " (frontend: " + distDir + ").");
+    if (process.platform === "win32") {
+      console.log("Pode fechar/minimizar esta janela: o servidor continua no ar (perder o foco não o derruba).");
+      console.log("Para parar: `prodmaker stop`.");
+    } else {
+      console.log("CTRL+C encerra o launcher e o servidor; fechar a janela (SIGHUP) mantém o daemon no ar.");
     }
-    launcherDbg("[READLINE] stdin nao-tty fechou - launcher mantido (use prodmaker stop)");
-  });
+    console.log("Logs persistentes: " + storagePath(home, "logs", "app.log"));
+  } else {
+    console.error("O servidor não respondeu em 30s. Últimas linhas de " + storagePath(home, "logs", "app.log") + ":");
+    try {
+      const linhas = fs
+        .readFileSync(storagePath(home, "logs", "app.log"), "utf8")
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .slice(-8);
+      for (const l of linhas) console.error("  " + l);
+    } catch {
+      console.error("  (app.log indisponível)");
+    }
+    console.error("Diagnóstico completo: npm run debug (sobe o Python direto, sem daemon).");
+    matarArvore(backendPid);
+    limparPidGlobal(home);
+    process.exit(1);
+  }
+
+  // 4) WATCHDOG de saúde do daemon. O spawn destacado não emite eventos de exit
+  //    confiáveis — a saúde é polida a cada 10s. FALHAS_PARA_REINICIAR leituras
+  //    ruins consecutivas reerguem o daemon, mas no MÁXIMO MAX_REINICIOS vezes
+  //    (sem teto, um backend que não sobe viraria loop infinito de spawns — e
+  //    cada spawn no Windows é candidato a uma janela de console). unref: quem
+  //    segura o event loop é o listen da UI, não o timer.
+  let falhasSaude = 0;
+  let reinicios = 0;
+  const watchdog = setInterval(async () => {
+    if (await waitReady(apiPort, 4000)) {
+      falhasSaude = 0;
+      reinicios = 0;
+      return;
+    }
+    falhasSaude += 1;
+    if (falhasSaude < FALHAS_PARA_REINICIAR) return;
+    if (reinicios >= MAX_REINICIOS) {
+      clearInterval(watchdog);
+      console.error("");
+      console.error(`O servidor não respondeu em http://127.0.0.1:${apiPort} após ${MAX_REINICIOS} tentativas de reinício.`);
+      console.error("O launcher está sendo encerrado para não entrar em loop infinito.");
+      console.error("Diagnóstico completo em: " + storagePath(home, "logs", "app.log"));
+      console.error("Se a porta estiver ocupada por outra instância, rode `prodmaker stop`.");
+      matarArvore(backendPid);
+      limparPidGlobal(home);
+      process.exit(1);
+      return;
+    }
+    falhasSaude = 0;
+    const existente = await backendJaRodando(home);
+    if (existente) {
+      console.log(`Servidor já em execução (PID ${existente.pid}) na porta ${existente.port} - reaproveitando.`);
+      apiPort = existente.port;
+      backendPid = existente.pid;
+      escreverPidGlobal(home, process.pid, backendPid, port, apiPort);
+      return;
+    }
+    reinicios += 1;
+    console.error(`[ProdMaker] Servidor não responde - reiniciando (${reinicios}/${MAX_REINICIOS})...`);
+    const novo = spawnDaemon(home, rt, apiPort);
+    backendPid = novo.pid;
+    escreverPidGlobal(home, process.pid, backendPid, port, apiPort);
+  }, 10000);
+  watchdog.unref();
 }
 
 async function commandStop() {
@@ -833,38 +1212,41 @@ async function commandStop() {
     if (Number.isInteger(settings.port)) preferred = settings.port;
   } catch {}
 
-  // 1) Mata o LAUNCHER primeiro (senão o supervisor reergueria o servidor).
-  const pidFile = storagePath(home, "state", "launcher.pid");
-  let matouLauncher = false;
-  try {
-    const pid = fs.readFileSync(pidFile, "utf8").trim();
-    if (pid) {
-      if (process.platform === "win32") {
-        spawnSync("taskkill", ["/F", "/T", "/PID", pid], { stdio: "ignore", windowsHide: true });
-      } else {
-        try {
-          process.kill(Number(pid), "SIGKILL");
-        } catch {}
+  let mortos = 0;
+  // 1) LOCK GLOBAL (storage/prodmaker.pid): mata o launcher e o daemon
+  //    registrados, com taskkill /PID /F /T silencioso (windowsHide + ignore).
+  const lock = lerPidGlobal(home);
+  if (lock) {
+    for (const [nome, pid] of [["Launcher", lock.launcher], ["Servidor", lock.backend]]) {
+      if (pid && pid !== process.pid) {
+        matarArvore(pid);
+        mortos += 1;
+        console.log(`${nome} (pid ${pid}) encerrado.`);
       }
-      matouLauncher = true;
-      console.log(`Launcher (pid ${pid}) encerrado.`);
-    }
-  } catch {}
-
-  // 2) Mata o servidor Python pela porta (toda a faixa possível).
-  let matouServidor = 0;
-  for (let port = preferred; port <= preferred + 11; port += 1) {
-    const antes = portListeners(port);
-    killPortProcess(port);
-    if (antes > 0) {
-      matouServidor += 1;
-      console.log(`Porta ${port}: processo do servidor encerrado.`);
     }
   }
-  if (!matouLauncher && matouServidor === 0) {
-    console.log("Nenhum ProdMaker ativo encontrado (sem launcher registrado e portas livres).");
+
+  // 2) PID files de versões anteriores (daemon-exit e launcher readline).
+  matarPidLegados(home);
+
+  // 3) Varredura das portas candidatas (UI e API) — pega o zombie que o lock
+  //    perdeu. Sempre silencioso: nenhuma janela de console pode piscar.
+  const apiBase = preferred === API_PORT_DEFAULT ? API_PORT_DEFAULT + PORT_SCAN : API_PORT_DEFAULT;
+  for (const base of [preferred, apiBase]) {
+    for (let port = base; port < base + PORT_SCAN; port += 1) {
+      const dono = pidDaPorta(port);
+      if (dono && dono !== process.pid) {
+        matarArvore(dono);
+        mortos += 1;
+        console.log(`Porta ${port}: processo do servidor encerrado.`);
+      }
+    }
+  }
+  limparPidGlobal(home);
+  if (mortos > 0) {
+    console.log("ProdMaker parado.");
   } else {
-    console.log("ProdMaker parado. Pode fechar a janela do terminal com seguranca.");
+    console.log("Nenhum ProdMaker ativo encontrado.");
   }
 }
 
@@ -889,6 +1271,22 @@ async function commandDoctor() {
   console.log(`Runtime (.runtime): ${fs.existsSync(path.join(rt, "app", "main.py")) ? "OK" : "FALTA (rode install)"}`);
   const dist = path.join(rt, "frontend", "dist", "index.html");
   console.log(`Frontend build (.runtime/frontend/dist): ${fs.existsSync(dist) ? "OK" : "pendente (rode install)"}`);
+  // Status do daemon pelo LOCK GLOBAL (fallback: PID file de versão anterior).
+  const lock = lerPidGlobal(home);
+  if (lock && lock.backend) {
+    const estado = pidVivo(lock.backend)
+      ? `rodando (pid ${lock.backend}, API na porta ${lock.apiPort || "?"})`
+      : `parado (pid ${lock.backend} morto)`;
+    console.log(`Servidor (daemon): ${estado}`);
+  } else {
+    const legado = storagePath(home, "state", "python.pid");
+    const pidLegado = fs.existsSync(legado) ? fs.readFileSync(legado, "utf8").trim() : "";
+    console.log(
+      pidLegado
+        ? `Servidor (daemon legado): ${pidVivo(pidLegado) ? "rodando (pid " + pidLegado + ")" : "parado (pid morto)"}`
+        : "Servidor (daemon): parado (nenhum lock)"
+    );
+  }
   const port = await pickPort(DEFAULT_PORT);
   console.log(`Porta ${DEFAULT_PORT}: ${port === DEFAULT_PORT ? "livre" : "ocupada"}`);
 }

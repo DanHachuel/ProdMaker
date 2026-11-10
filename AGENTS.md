@@ -10,8 +10,10 @@ Violação = bug crítico, corrigir antes de qualquer publicação.
 É PROIBIDO criar/publicar versões que abram qualquer janela/tela nativa de CMD
 (cmd.exe/console) no computador do usuário. Todo processo filho (Python/worker)
 deve subir sem alocar console novo: no Windows use `windowsHide: true`
-(CREATE_NO_WINDOW) e, quando precisar de grupo de processos próprio,
-`detached: true` + `pythonw.exe` (subsistema GUI, sem console). O launcher só
+(CREATE_NO_WINDOW) e, para o servidor, `detached: true` + o **binário base do
+venv com o `site-packages` no `PYTHONPATH`** — o `venv/Scripts/python.exe` é um
+redirecionador cujo processo neto nasce sem as flags de ocultação e abriria um
+console novo (a janela preta). O launcher só
 imprime no terminal já existente (MobaXterm/CMD); o usuário nunca pode ver uma
 janela preta piscar ao iniciar/rodar. Violação = bug crítico, corrigir antes de
 qualquer publicação.
@@ -20,13 +22,23 @@ qualquer publicação.
 O launcher (`scripts/cli.mjs`) NÃO pode morrer sozinho. O MobaXterm envia sinais
 espúrios (SIGINT/SIGHUP) quando a janela perde o foco ou é minimizada, e escrever
 em console fechado gera EPIPE — ambos já derrubaram o app sem motivo. Por isso:
-1. **Trava DEFINITIVA (readline):** o launcher DEVE manter, no fim do `run`, um
-   `readline.createInterface({ input: process.stdin, output: process.stdout })`.
-   O MobaXterm é um pseudo-terminal (PTY) que **encerra o Node se ele não estiver
-   escutando ativamente o `stdin`** — `setInterval`/`Promise` não leem o stdin e
-   não seguravam o processo lá; o readline é a única forma de o Node esperar no
-   terminal Windows. Em `rl.on('close')` (terminal fechado) o launcher mata o
-   Python e encerra — nunca fica sozinho com código 0.
+1. **Arquitetura PandaNews (definitiva):** o `run` NÃO tenta "segurar" o
+   terminal com `setInterval`/`Promise`/`readline` — todos falham no PTY do
+   MobaXterm, que desanexa ou mata o Node. Em vez disso:
+   - o Python sobe como **daemon isolado**: binário **base** do venv +
+     `PYTHONPATH` do venv (Windows), `spawn` com `detached: true`,
+     `windowsHide: true`, `stdio: ['ignore', logFd, logFd]` (logs em
+     `storage/logs/app.log`), `creationFlags: CREATE_NEW_PROCESS_GROUP` e
+     `child.unref()` — fechar/minimizar/perder o foco **não** derruba nada;
+   - o launcher fica no ar porque tem um **socket HTTP real**:
+     `http.createServer().listen(8188)` serve `.runtime/frontend/dist` (com SPA
+     fallback) e encaminha `/api`, `/legal`, `/pages` e `/track` para o daemon
+     Python (porta 8189). O listen é a única trava do terminal;
+   - o lock global `storage/prodmaker.pid` (JSON: launcher + backend + portas)
+     permite ao `stop` encerrar tudo com `taskkill /PID /F /T` **silencioso**, e
+     ao `run` matar instâncias antigas (PIDs do lock + donos das portas via
+     netstat) antes de subir a nova. Watchdog reergue o daemon em quedas
+     silenciosas, com teto de `MAX_REINICIOS`.
 2. **Absorção de Sinais:** os sinais `SIGINT` e `SIGHUP` DEVEM ser ignorados no
    Windows (apenas logar). O encerramento real é via comando `prodmaker stop`,
    fechamento da janela ou `taskkill`. Em Linux/macOS, CTRL+C encerra normal.
@@ -35,7 +47,10 @@ em console fechado gera EPIPE — ambos já derrubaram o app sem motivo. Por iss
 4. **Isolamento de Workers:** processos filhos DEVEM ser iniciados com
    `CREATE_NEW_PROCESS_GROUP` (0x00000200) — não herdam os sinais do terminal.
 5. **Trava de regressão:** `tests/test_launcher_keepalive.py` falha se qualquer
-   uma das proteções acima for removida; rodar antes de publicar (CI).
+   uma das proteções acima for removida (listen HTTP como trava do terminal,
+   daemon detached/unref/stdio-em-arquivo, binário base + PYTHONPATH, lock
+   `prodmaker.pid` + taskkill silencioso, kill de instâncias antigas, watchdog
+   com teto); rodar antes de publicar (CI).
 
 ## 🚨 REGRA INVIOLÁVEL: RUNTIME PERMANENTE (fim do EBUSY)
 O servidor **nunca** deve rodar do cache do `npx` (`.npm/_npx/...`). Com o Node e
