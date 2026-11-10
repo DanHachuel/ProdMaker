@@ -1,15 +1,18 @@
 """Teste de CI — regra inviolável da arquitetura do launcher (Windows/MobaXterm).
 
-Lê o `scripts/cli.mjs` e falha se qualquer uma das 4 proteções contra o
-"app encerra sozinho" for removida:
+Lê o `scripts/cli.mjs` e falha se qualquer proteção contra o "app encerra
+sozinho" for removida:
 
-1. Keep-alive: `setInterval(() => {}, 1000)` mantém o Event Loop do Node vivo.
-2. Absorção de sinais: SIGINT/SIGHUP são ABSORVIDOS no Windows (sinal espúrio
-   do MobaXterm ao perder foco/minimizar não pode derrubar o launcher).
+1. Trava DEFINITIVA (readline): `readline.createInterface({ input: process.stdin,
+   output: process.stdout })` é o que segura o Node no terminal — o MobaXterm
+   (pseudo-terminal) encerra o Node se ele NÃO estiver escutando ativamente o
+   stdin. No `rl.on('close')` (terminal fechado) o launcher mata o Python e sai.
+2. Absorção de sinais: SIGINT/SIGHUP são ABSORVIDOS no Windows (sinal espúrio do
+   MobaXterm ao perder foco/minimizar não pode derrubar o launcher).
 3. Guarda da consola: `guardConsoleStream` absorve EPIPE (terminal fechado) e
    espelha os logs em arquivo.
-4. Isolamento de workers: filhos sobem com CREATE_NEW_PROCESS_GROUP (0x00000200)
-   — não herdam os sinais do terminal.
+4. Isolamento de workers: filhos sobem com CREATE_NEW_PROCESS_GROUP (0x00000200) —
+   não herdam os sinais do terminal.
 
 Roda sozinho:  python tests/test_launcher_keepalive.py
 Roda no pytest: pytest tests/test_launcher_keepalive.py
@@ -25,53 +28,39 @@ def _conteudo() -> str:
         return handle.read()
 
 
-def test_launcher_keepalive_and_isolation():
-    with open(LAUNCHER, "r", encoding="utf-8") as handle:
-        content = handle.read()
+def test_trava_readline_e_isolation():
+    content = _conteudo()
 
-    assert "setInterval(() => {}, 1000)" in content, "Keep-Alive removido!"
+    # (1) Trava definitiva: readline ouvindo o terminal (stdin/stdout).
+    assert "readline.createInterface" in content, "Trava readline (leitura do terminal) removida!"
+    assert "input: process.stdin" in content, "Readline nao escuta o stdin!"
+    assert "output: process.stdout" in content, "Readline nao escreve no terminal!"
+    assert "rl.on(\"close\"" in content, "Handler de fechamento do readline (terminal fechou) removido!"
+    # (2) Isolamento do worker (grupo proprio - imune ao CTRL_C do console).
     assert "0x00000200" in content or "CREATE_NEW_PROCESS_GROUP" in content, "Isolamento removido!"
-    assert "guardConsoleStream" in content, "Guarda de consola removida!"
+    # (3) Guarda da consola (EPIPE).
     assert "guardConsoleStream(process.stdout)" in content, "Guarda do stdout removida!"
     assert "guardConsoleStream(process.stderr)" in content, "Guarda do stderr removida!"
 
 
-def test_trava_absoluta_tres_mecanismos():
-    """O launcher NÃO pode sair sozinho com código 0 após o box.
-
-    Ressintoma relatado: no MobaXterm o event loop esvasiava (stdio sumia) e o
-    Node saia limpo. Defesa em 3 camadas +Watchdog silencioso.
-    """
+def test_close_do_readline_encerra_o_servidor():
+    """Terminal fechado (readline close) DEVE encerrar o Python e sair (sem orfao)."""
     content = _conteudo()
-    # (a) timer keep-alive
-    assert "setInterval(() => {}, 1000)" in content, "Timer keep-alive removido!"
-    # (b) trava absoluta: commandRun nunca retorna
-    assert "await new Promise(() => {})" in content, "Trava absoluta (Promise infinita) removida!"
-    # (c) rearme no beforeExit: se o loop esvair, REAGENDA e segue
-    assert "beforeExit" in content, "Rearme no beforeExit removido!"
-    assert "REARMANDO" in content, "Reagendamento do beforeExit removido!"
-    # watchdog silencioso (prova de vida no arquivo)
-    assert "WATCHDOG" in content, "Watchdog silencioso removido!"
-
-
-def test_readline_close_nao_mata_com_servidor_vivo():
-    """EOF/close do stdin NÃO pode encerrar o launcher enquanto o filho vive."""
-    content = _conteudo()
-    assert "childVivo()" in content, "Verificacao do filho vivo no close do readline removida!"
-    assert "servidor segue NO AR" in content, "Mensagem de continuidade apos stdin fechar removida!"
+    assert "Terminal fechado. Encerrando" in content, "Mensagem de encerramento no close removida!"
+    assert "killChild()" in content, "killChild (matar o Python) nao usado no close!"
+    assert "process.exit(0)" in content, "Saida limpa no close do readline removida!"
 
 
 def test_sinais_absorvidos_no_windows():
-    """No Windows, SIGINT e SIGHUP NAO podem encerrar o launcher (sinal espúrio)."""
+    """No Windows, SIGINT e SIGHUP NAO podem encerrar o launcher (sinal espurio)."""
     content = _conteudo()
-    # O bloco de absorção existe e registra os dois sinais como ABSORVIDOS.
     assert "ABSORVIDO" in content, "Absorcao de sinais (Windows) removida!"
     assert "SIGINT no Windows" in content, "Absorcao do SIGINT no Windows removida!"
     assert "SIGHUP no Windows" in content, "Absorcao do SIGHUP no Windows removida!"
 
 
 def test_comando_stop_disponivel():
-    """O encerramento real no Windows vem de `prodmaker stop`."""
+    """O encerramento real no Windows vem de `prodmaker stop`/taskkill."""
     content = _conteudo()
     assert "commandStop" in content, "Comando stop removido!"
     assert '"stop"' in content or "'stop'" in content, "Comando stop nao registrado no dispatcher!"
@@ -79,11 +68,10 @@ def test_comando_stop_disponivel():
 
 if __name__ == "__main__":
     testes = [
-        test_launcher_keepalive_and_isolation,
+        test_trava_readline_e_isolation,
+        test_close_do_readline_encerra_o_servidor,
         test_sinais_absorvidos_no_windows,
         test_comando_stop_disponivel,
-        test_trava_absoluta_tres_mecanismos,
-        test_readline_close_nao_mata_com_servidor_vivo,
     ]
     falhas = 0
     for teste in testes:

@@ -3,6 +3,26 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.50 — 2026-11-10
+
+- **HOTFIX DEFINITIVO — trava do launcher via `readline` (fim do "encerra sozinho" no MobaXterm/PTY).**
+- Diagnóstico: o MobaXterm é um pseudo-terminal (PTY) que encerra o Node se ele não estiver
+  escutando ativamente o `stdin`; `setInterval`/`Promise` não leem o stdin.
+- `scripts/cli.mjs` (`commandRun`): no fim do `run`, um
+  `readline.createInterface({ input: process.stdin, output: process.stdout })` segura o terminal.
+  `rl.on('close')`:
+  - **terminal real** (`process.stdin.isTTY`, ex.: MobaXterm/PowerShell) fechado → mata o Python
+    (`killChild`) e encerra (`[LAUNCHER] Terminal fechado. Encerrando...`), sem órfão;
+  - **stdin não-tty** (pipe/redirecionamento/CI) → **não** encerra: um EOF precoce não derruba o
+    launcher (o handle do filho Python o mantém vivo).
+  - Removidos os timers/`await new Promise`/rearme do fluxo de sucesso (conflitavam com o PTY).
+  - Mantidos: absorção de SIGINT/SIGHUP no Windows, `guardConsoleStream` (anti-EPIPE),
+    `CREATE_NEW_PROCESS_GROUP`, `killPortProcess`, auto-restart, `prodmaker stop`.
+- `tests/test_launcher_keepalive.py` e a regra do `AGENTS.md` atualizados para a trava readline.
+- `.gitignore`: `+.runtime/` (runtime gerado pelo install; nunca versionar).
+- Bump 0.1.49 → 0.1.50 (package.json, cli.mjs, app/main.py + canonical) + CHANGELOG.
+- Testado: Node permanece VIVO + servindo (`health 200`) após o EOF do stdin (não-tty); testes 4/4.
+
 ## 0.1.49 — 2026-11-09
 
 - **HOTFIX — o `install` não aborta mais a cópia do `.runtime` silenciosamente.**

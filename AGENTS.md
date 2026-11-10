@@ -20,13 +20,13 @@ qualquer publicação.
 O launcher (`scripts/cli.mjs`) NÃO pode morrer sozinho. O MobaXterm envia sinais
 espúrios (SIGINT/SIGHUP) quando a janela perde o foco ou é minimizada, e escrever
 em console fechado gera EPIPE — ambos já derrubaram o app sem motivo. Por isso:
-1. **Keep-Alive:** o launcher DEVE usar `setInterval(() => {}, 1000)` para se
-   manter vivo no MobaXterm (Event Loop nunca esvazia).
-1b. **Trava Absoluta (3 mecanismos):** timer keep-alive **+** `await new
-    Promise(() => {})` no fim do `commandRun` (nunca retorna) **+** rearme no
-    `beforeExit` (se o loop esvair, reagenda e segue). O launcher só morre por
-    `stop`, sinal real ou hard-kill — **nunca sozinho com código 0**. EOF/close
-    do `stdin` só encerra se o filho Python também já morreu.
+1. **Trava DEFINITIVA (readline):** o launcher DEVE manter, no fim do `run`, um
+   `readline.createInterface({ input: process.stdin, output: process.stdout })`.
+   O MobaXterm é um pseudo-terminal (PTY) que **encerra o Node se ele não estiver
+   escutando ativamente o `stdin`** — `setInterval`/`Promise` não leem o stdin e
+   não seguravam o processo lá; o readline é a única forma de o Node esperar no
+   terminal Windows. Em `rl.on('close')` (terminal fechado) o launcher mata o
+   Python e encerra — nunca fica sozinho com código 0.
 2. **Absorção de Sinais:** os sinais `SIGINT` e `SIGHUP` DEVEM ser ignorados no
    Windows (apenas logar). O encerramento real é via comando `prodmaker stop`,
    fechamento da janela ou `taskkill`. Em Linux/macOS, CTRL+C encerra normal.
