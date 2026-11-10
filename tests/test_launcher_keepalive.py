@@ -3,11 +3,13 @@
 Lê o `scripts/cli.mjs` e falha se qualquer proteção contra o "app encerra
 sozinho" / "janela preta de CMD" for removida. Modelo PandaNews (portado):
 
-1. TRAVA DO LAUNCHER = socket HTTP REAL: `http.createServer().listen(UI_PORT)`
-   serve `.runtime/frontend/dist` e proxiia `/api`, `/legal`, `/pages` e `/track`
-   para o daemon Python. É o listen que segura o Node no terminal — NUNCA
-   `setInterval`/`await new Promise(() => {})`/`readline` (todos falharam no PTY
-   do MobaXterm, que desanexa ou mata o processo).
+1. TRAVA DO LAUNCHER = DOIS holds reais, juntos: `http.createServer().listen(8188)`
+   servindo `.runtime/frontend/dist` (proxy `/api`, `/legal`, `/pages`, `/track`
+   para o daemon) **E** `readline.createInterface` escutando o `stdin` — no PTY
+   do MobaXterm nenhum dos dois sozinho segura o Node. NÃO vale `setInterval`/
+   `await new Promise(() => {})` (todos falharam).
+2. READLINE RESILIENTE: fechamento de terminal REAL (`stdin.isTTY`) encerra o
+   daemon Python junto e sai limpo; stdin NÃO-tty (pipe/CI) NÃO derruba nada.
 2. DAEMON ISOLADO: o Python sobe com `detached: true` +
    `creationFlags: CREATE_NEW_PROCESS_GROUP (0x00000200)` + `windowsHide: true` +
    `stdio: ['ignore', logFd, logFd]` (storage/logs/app.log) + `child.unref()` —
@@ -40,7 +42,8 @@ def _conteudo() -> str:
 
 
 # ---------------------------------------------------------------------------
-# 1) A trava do launcher é um socket HTTP real (nunca timer/promise/readline)
+# 1) A trava do launcher são DOIS holds reais: socket HTTP (listen) + readline
+#    (stdin do teclado). Nenhum dos dois sozinho segura o PTY do MobaXterm.
 # ---------------------------------------------------------------------------
 
 def test_trava_e_http_listen_real():
@@ -48,9 +51,30 @@ def test_trava_e_http_listen_real():
     assert "createServer" in content, "Servidor HTTP do launcher removido!"
     assert ".listen(" in content, "listen do socket HTTP removido — o terminal volta ao prompt!"
     # as travas que falharam no PTY do MobaXterm NÃO podem voltar
-    assert "readline.createInterface" not in content, "Trava readline (falhou no PTY) reintroduzida!"
     assert "await new Promise(() => {})" not in content, "Trava promise infininta reintroduzida!"
     assert "keepAliveTimer" not in content, "Timer keep-alive como trava reintroduzido!"
+    assert "setInterval(() => {}, 1000)" not in content, "Timer vazio como trava reintroduzido!"
+
+
+def test_trava_readline_escuta_o_teclado():
+    """O MobaXterm (PTY) encerra o Node se ele não escuta o stdin: o readline é
+    o segundo hold, inseparável do listen HTTP ("casamento perfeito")."""
+    content = _conteudo()
+    assert "readline.createInterface" in content, "Trava readline (leitura do teclado) removida!"
+    assert "input: process.stdin" in content, "Readline nao escuta o stdin!"
+    assert "output: process.stdout" in content, "Readline nao escreve no terminal!"
+    assert 'rl.on("close"' in content, "Handler de fechamento do readline (terminal fechou) removido!"
+
+
+def test_readline_close_resiliente():
+    """Terminal REAL fechado (stdin.isTTY) encerra o daemon e sai limpo; stdin
+    NÃO-tty (pipe/redirecionamento/CI) NÃO pode derrubar o launcher — um EOF
+    precoce mataria o servidor sem o usuário fechar nada."""
+    content = _conteudo()
+    assert "Terminal fechado. Encerrando" in content, "Mensagem de encerramento no close removida!"
+    assert "process.stdin.isTTY" in content, "Guard isTTY removido — EOF de pipe derrubaria o launcher!"
+    assert "matarArvore(backendPid)" in content, "Close do terminal não mata o daemon (órfão na porta)!"
+    assert "launcher mantido" in content, "Ramo nao-tty (EOF precoce nao encerra) removido!"
 
 
 def test_ui_serve_dist_e_proxyia_api():
@@ -136,6 +160,8 @@ def test_watchdog_com_teto():
 if __name__ == "__main__":
     testes = [
         test_trava_e_http_listen_real,
+        test_trava_readline_escuta_o_teclado,
+        test_readline_close_resiliente,
         test_ui_serve_dist_e_proxyia_api,
         test_daemon_detached_unref_stdio_arquivo,
         test_python_base_com_pythonpath,

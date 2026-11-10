@@ -30,10 +30,13 @@ em console fechado gera EPIPE — ambos já derrubaram o app sem motivo. Por iss
      `windowsHide: true`, `stdio: ['ignore', logFd, logFd]` (logs em
      `storage/logs/app.log`), `creationFlags: CREATE_NEW_PROCESS_GROUP` e
      `child.unref()` — fechar/minimizar/perder o foco **não** derruba nada;
-   - o launcher fica no ar porque tem um **socket HTTP real**:
-     `http.createServer().listen(8188)` serve `.runtime/frontend/dist` (com SPA
-     fallback) e encaminha `/api`, `/legal`, `/pages` e `/track` para o daemon
-     Python (porta 8189). O listen é a única trava do terminal;
+   - o launcher fica no ar por **DOIS holds reais, juntos** (o "casamento
+     perfeito"): `http.createServer().listen(8188)` serve `.runtime/frontend/dist`
+     (com SPA fallback) e encaminha `/api`, `/legal`, `/pages` e `/track` para o
+     daemon Python (porta 8189) **E** `readline.createInterface` escutando o
+     `stdin` — no PTY do MobaXterm nenhum dos dois sozinho segura o Node. Fechar
+     um terminal REAL (`stdin.isTTY`) encerra o daemon junto e sai limpo; stdin
+     não-tty (pipe/CI) nunca derruba o launcher;
    - o lock global `storage/prodmaker.pid` (JSON: launcher + backend + portas)
      permite ao `stop` encerrar tudo com `taskkill /PID /F /T` **silencioso**, e
      ao `run` matar instâncias antigas (PIDs do lock + donos das portas via

@@ -3,11 +3,12 @@
  * REGRA ZERO: este launcher NUNCA abre o navegador. Apenas imprime a URL.
  */
 import { spawn as nodeSpawn, spawnSync } from "node:child_process";
+import readline from "node:readline";
 import { createRequire } from "node:module";
+import { createServer, request as httpRequest } from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
-import { createServer, request as httpRequest } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -29,7 +30,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.51";
+const APP_VERSION = "0.1.52";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -304,6 +305,9 @@ function pidVivo(pid) {
     return false;
   }
 }
+
+// ---------------------------------------------------------------------------
+
 
 // Mata qualquer processo escutando na porta (Windows) antes de subir — evita que
 // um Python fantasma de execucao anterior ocupe a porta e derrube o novo.
@@ -1201,6 +1205,33 @@ async function commandRun() {
     escreverPidGlobal(home, process.pid, backendPid, port, apiPort);
   }, 10000);
   watchdog.unref();
+
+  // -------------------------------------------------------------------------
+  // TRAVA DE TERMINAL (readline) — o "casamento perfeito" com o listen HTTP.
+  // No MobaXterm (PTY) o http.listen sozinho NÃO segura o processo: o terminal
+  // encerra o Node se ele não estiver escutando o teclado ativamente. A
+  // interface readline mantém o stdin ativo — com os DOIS holds (listen HTTP +
+  // readline) o launcher só sai quando o terminal é realmente fechado, por
+  // `prodmaker stop` ou por taskkill. NUNCA por conta própria.
+  // -------------------------------------------------------------------------
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  rl.on("close", () => {
+    launcherDbg("[READLINE] terminal/stdin fechou");
+    // Terminal REAL (MobaXterm/PowerShell/CMD — stdin.isTTY) fechado: encerra o
+    // daemon Python junto e sai limpo, sem órfão segurando a porta. Em stdin
+    // NÃO-tty (pipe/redirecionamento/CI) o EOF pode chegar sem o usuário fechar
+    // nada — aí NÃO encerra: o launcher segue no ar (parar só com `prodmaker
+    // stop`). Esse guard impede que um EOF precoce derrube o servidor.
+    if (process.stdin && process.stdin.isTTY) {
+      console.error("\n[LAUNCHER] Terminal fechado. Encerrando...");
+      controlledStop = true;
+      matarArvore(backendPid);
+      limparPidGlobal(home);
+      process.exit(0);
+    }
+    launcherDbg("[READLINE] stdin nao-tty fechou - launcher mantido (use prodmaker stop)");
+  });
+  launcherDbg(`[RUN] holds ativos: http.listen(${ui.port}) + readline(stdin) — daemon pid ${backendPid}`);
 }
 
 async function commandStop() {

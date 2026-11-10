@@ -3,6 +3,43 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.52 — 2026-11-10
+
+- **HOTFIX DEFINITIVO (2ª parte) — o "casamento perfeito": `http.listen` + `readline`
+  juntos seguram o terminal no MobaXterm (PTY).**
+- **Sintoma da 0.1.51:** com o modelo PandaNews aplicado, o Python subia como daemon
+  (pid no ar) mas o **Node ainda encerrava o terminal** logo após imprimir o box,
+  voltando ao prompt `PS C:\...>`. O `http.createServer().listen(8188)` sozinho NÃO
+  é suficiente: o MobaXterm (PTY) encerra o Node se ele não estiver escutando o
+  teclado ativamente.
+- **Solução:** `scripts/cli.mjs` (`commandRun`), depois do listen da UI, cria a
+  interface `readline.createInterface({ input: process.stdin, output: process.stdout })`
+  — o readline mantém o `stdin` ativo e o Node **só** sai quando o terminal é
+  realmente fechado, por `prodmaker stop` ou por taskkill. Os DOIS handles
+  (listen HTTP + readline) ficam no ar juntos; nenhum `process.exit(0)` é chamado
+  após subir servidor + readline.
+- **Fechamento do terminal (robusto):** no `rl.on('close')`:
+  - terminal **REAL** (`process.stdin.isTTY` — MobaXterm/PowerShell/CMD) →
+    `[LAUNCHER] Terminal fechado. Encerrando...`, mata o daemon Python
+    (`matarArvore(backendPid)`), limpa o lock e sai — **sem órfão** segurando a
+    porta (o UI morre com o launcher, então o daemon headless não tem serventia);
+  - stdin **NÃO-tty** (pipe/redirecionamento/CI) → **NÃO** encerra: um EOF precoce
+    não derruba o launcher (ele segue no ar; parar só com `prodmaker stop`).
+- Mantido TUDO da 0.1.51: daemon isolado (binário base + `PYTHONPATH` no Windows,
+  `detached` + `windowsHide` + `CREATE_NEW_PROCESS_GROUP` + `stdio` em
+  `storage/logs/app.log` + `unref`), UI em 8188 servindo `.runtime/frontend/dist`
+  com proxy `/api`, `/legal`, `/pages`, `/track` para o daemon (8189), lock
+  `storage/prodmaker.pid` + `stop` silencioso (`taskkill /PID /F /T`), kill de
+  instâncias antigas no `run`, watchdog com teto, absorção de SIGINT/SIGHUP no
+  Windows e `guardConsoleStream` (anti-EPIPE).
+- **Regra 1 do AGENTS.md** agora exige os DOIS holds (listen + readline) e o teste
+  de CI `tests/test_launcher_keepalive.py` ganhou 2 verificações novas (12 no
+  total): readline escutando o teclado + fechamento resiliente (guard `isTTY`).
+- Testado: run → Node VIVO (sandbox, stdin não-tty) com UI 200 em 8188, `/api`
+  200 via proxy, SPA fallback 200 e EOF do stdin NÃO derrubando nada; daemon
+  isolado; `stop` derruba tudo. Testes 12/12 e 5/5.
+- Bump: `0.1.52` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.51 — 2026-11-10
 
 - **HOTFIX DEFINITIVO DE ARQUITETURA — portado o modelo do PandaNews (que nunca
