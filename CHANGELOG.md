@@ -3,6 +3,31 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.53 — 2026-11-11
+
+- **HOTFIX CRÍTICO — UI e API escolhiam a MESMA porta (rodar o `run` duas
+  vezes quebrava o sistema).**
+- **Causa raiz:** `pickPort()` TESTA a porta mas não a RESERVA. Com uma
+  instância anterior ainda morrendo (porta em TIME_WAIT), a UI varria
+  8188→8189→8190 e a API varria 8189→8190 — as duas chamadas seguidas
+  devolviam **8190 para as duas**: o daemon e a UI colidiam, o box nunca
+  aparecia e o lock ficava inconsistente.
+- **Correção:** a API é alocada PRIMEIRO (`pickPort(API_PORT_DEFAULT)`) e a UI
+  depois com `pickPort(preferred, [apiPort])` — a faixa da UI pula a porta da
+  API. `pickPort` ganhou o parâmetro `excluir`; `listenUi` também salta a porta
+  da API nas suas retentativas (EADDRINUSE). Garantia estrutural: UI ≠ API,
+  sempre.
+- **Robustez:** `fetchMasterCode` agora tem `timeout: 7000` — um `spawnSync`
+  sem limite pendurava o launcher para sempre (redirector do python que não
+  devolve o controle); estourando o tempo, segue com o código padrão do box.
+- `matarInstanciasAntigas` chamado com `API_PORT_DEFAULT` (a referencia a
+  `apiBase` local não existia mais no fluxo novo).
+- Verificado ponta a ponta: 1ª execução (UI 8188/API 8189) e 2ª execução
+  substituindo a anterior (matou 2 processos, UI 8191/API 8189→8190 distintos,
+  box com a URL correta, holds `http.listen + readline` ativos) e `stop`
+  encerrando tudo.
+- Bump: `0.1.53` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.52 — 2026-11-10
 
 - **HOTFIX DEFINITIVO (2ª parte) — o "casamento perfeito": `http.listen` + `readline`

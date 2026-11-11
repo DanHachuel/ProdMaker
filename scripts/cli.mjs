@@ -30,7 +30,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.52";
+const APP_VERSION = "0.1.53";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -664,9 +664,12 @@ async function listenUi(uiPort, apiPort, distDir, limite) {
   const server = criarUiServer(apiPort, distDir);
   return new Promise((resolve, reject) => {
     server.once("error", (err) => {
-      if (err && err.code === "EADDRINUSE" && uiPort < limite) {
-        console.log(`Porta ${uiPort} ocupada - tentando ${uiPort + 1}...`);
-        resolve(listenUi(uiPort + 1, apiPort, distDir, limite));
+      // EADDRINUSE: tenta a próxima, mas NUNCA a porta da API (o daemon a ama).
+      let proxima = uiPort + 1;
+      if (proxima === apiPort) proxima += 1;
+      if (err && err.code === "EADDRINUSE" && proxima < limite) {
+        console.log(`Porta ${uiPort} ocupada - tentando ${proxima}...`);
+        resolve(listenUi(proxima, apiPort, distDir, limite));
         return;
       }
       reject(err);
@@ -727,8 +730,12 @@ function isPortFree(port) {
   });
 }
 
-async function pickPort(preferred) {
+// pickPort TESTA a porta mas NÃO a reserva — duas chamadas seguidas podem
+// devolver a MESMA porta livre. Por isso quem aloca passa `excluir` (a API é
+// escolhida primeiro e a UI pula essa porta): UI e API NUNCA colidem.
+async function pickPort(preferred, excluir = []) {
   for (let port = preferred; port <= preferred + 11; port += 1) {
+    if (excluir.includes(port)) continue;
     if (await isPortFree(port)) return port;
   }
   return null;
@@ -770,6 +777,10 @@ async function fetchMasterCode(python, home, cwd) {
         encoding: "utf8",
         env: pythonEnv(home),
         windowsHide: true,
+        // timeout OBRIGATÓRIO: um spawnSync sem limite pendura o launcher para
+        // sempre (redirector do python que não devolve o controle). Estourou,
+        // seguimos com o código padrão — o box é cosmético, o servidor tem o real.
+        timeout: 7000,
       });
       const value = (result.stdout || "").trim().split(/\r?\n/).pop() || "";
       if (result.status === 0 && value) return value;
@@ -1021,21 +1032,22 @@ async function commandRun() {
 
   // UI (Node) na porta preferida; API (daemon Python) em porta própria — a UI
   // encaminha /api pra lá, então a URL que o usuário abre NÃO muda.
-  const port = await pickPort(preferred);
+  // API PRIMEIRO (porta fixa 8189, com faixa de fallback): a UI é escolhida
+  // depois PULANDO a porta da API — assim as duas nunca colidem, mesmo quando a
+  // porta preferida está ocupada por uma instância anterior ainda morrendo.
+  let apiPort = await pickPort(API_PORT_DEFAULT);
+  if (!apiPort) {
+    console.error(`Nenhuma porta disponível para a API entre ${API_PORT_DEFAULT} e ${API_PORT_DEFAULT + 11}.`);
+    process.exit(1);
+  }
+  if (apiPort !== API_PORT_DEFAULT) console.log(`Porta ${API_PORT_DEFAULT} ocupada — API usando ${apiPort}.`);
+
+  const port = await pickPort(preferred, [apiPort]);
   if (!port) {
     console.error(`Nenhuma porta disponível entre ${preferred} e ${preferred + 11}.`);
     process.exit(1);
   }
   if (port !== preferred) console.log(`Porta ${preferred} ocupada — UI usando ${port}.`);
-
-  // API: porta fixa 8189 (sai da faixa se colidir com a UI).
-  const apiBase = port === API_PORT_DEFAULT ? API_PORT_DEFAULT + PORT_SCAN : API_PORT_DEFAULT;
-  let apiPort = await pickPort(apiBase);
-  if (!apiPort) {
-    console.error(`Nenhuma porta disponível para a API entre ${apiBase} e ${apiBase + 11}.`);
-    process.exit(1);
-  }
-  if (apiPort !== apiBase) console.log(`Porta ${apiBase} ocupada — API usando ${apiPort}.`);
 
   // Spawn via `python -m app.main` (próprio entry point): permite log persistente
   // em storage/logs/app.log e captura de exceções fatais.
@@ -1100,7 +1112,9 @@ async function commandRun() {
   }
 
   // 1) MATA A INSTÂNCIA ANTERIOR antes de subir a nova (lock global + portas).
-  await matarInstanciasAntigas(home, preferred, apiBase);
+  // 1) MATA A INSTÂNCIA ANTERIOR antes de subir a nova (lock global + portas).
+  //    Varre a faixa da UI (preferred..) e da API (API_PORT_DEFAULT..).
+  await matarInstanciasAntigas(home, preferred, API_PORT_DEFAULT);
 
   // 2) DAEMON PYTHON — binário base + PYTHONPATH, detached, stdio em
   //    storage/logs/app.log, unref. Vive isolado do terminal.
