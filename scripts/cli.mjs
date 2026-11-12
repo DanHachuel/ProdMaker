@@ -3,7 +3,6 @@
  * REGRA ZERO: este launcher NUNCA abre o navegador. Apenas imprime a URL.
  */
 import { spawn as nodeSpawn, spawnSync } from "node:child_process";
-import readline from "node:readline";
 import { createRequire } from "node:module";
 import { createServer, request as httpRequest } from "node:http";
 import crypto from "node:crypto";
@@ -30,11 +29,22 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.53";
+const APP_VERSION = "0.1.54";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
 const DESIGNATED_HOME = "C:\\Users\\danha\\Documents\\REPOSITORIO\\ProdMaker";
+
+// ---------------------------------------------------------------------------
+// TRAVA GLOBAL INQUEBRÁVEL (regra inviolável — ver AGENTS.md).
+// Um setInterval no ESCOPO GLOBAL, SEM .unref(): o Event Loop do Node NUNCA
+// esvazia, em nenhum cenário (PTY do MobaXterm, perda de foco, EOF espúrio,
+// stdin fechado). Foi a última peça do "encerra sozinho": mesmo que todo o
+// resto falhe, este timer mantém o processo no ar. Como consequência, os
+// comandos TERMINAIS (install/doctor/stop) encerram com process.exit(0)
+// explícito no fim do seu trabalho — só o `run` (daemon + UI) fica no ar.
+// ---------------------------------------------------------------------------
+setInterval(() => {}, 60000); // Trava global inquebrável — NUNCA usar .unref()
 
 const DEFAULT_SETTINGS = {
   schema: 1,
@@ -238,6 +248,13 @@ process.on("exit", (code) => {
   // doctor têm mensagens próprias — a saída natural não vira o ruído
   // "[...] Código: 0" que confundia o usuário no fim do install.
   if ((process.argv[2] || "run") === "run") console.error(`\n${m}`);
+  // PROVA DE QUEM MATOU O PROCESSO: código + stack no ARQUIVO — o terminal pode
+  // já não existir (EPIPE do MobaXterm) e o console.log chegaria a lugar nenhum.
+  try {
+    const crash = path.join(resolveHome(), "storage", "logs", "crash.log");
+    fs.mkdirSync(path.dirname(crash), { recursive: true });
+    fs.appendFileSync(crash, `[${new Date().toISOString()}] ${m}\n  stack: ${new Error("rastro de saida").stack}\n`);
+  } catch {}
 });
 process.on("uncaughtException", (err) => {
   const m = `[LAUNCHER] Erro não tratado: ${err && err.stack ? err.stack : err}`;
@@ -997,6 +1014,8 @@ async function commandInstall(flags) {
   console.log("Para iniciar:");
   console.log("  npx --yes @danhachuel/prodmaker");
   console.log("Depois abra http://localhost:8188 MANUALMENTE no navegador (o sistema nunca abre o navegador).");
+  // Comando TERMINAL: com o setInterval global no ar, encerra de propósito.
+  process.exit(0);
 }
 
 async function commandRun() {
@@ -1082,34 +1101,19 @@ async function commandRun() {
   // encerramento real é sempre via `prodmaker stop` (ou taskkill no PID).
   // -------------------------------------------------------------------------
   let backendPid = null; // PID do daemon que ESTA sessão iniciou (null = reaproveitado)
-  if (process.platform === "win32") {
-    process.on("SIGINT", () =>
-      launcherDbg("[SIGNAL] SIGINT no Windows — ABSORVIDO (nao encerra; MobaXterm envia sinal espurio ao perder foco)")
-    );
-    process.on("SIGHUP", () =>
-      launcherDbg("[SIGNAL] SIGHUP no Windows — ABSORVIDO (perda de foco/minimizar nao derruba o servidor)")
-    );
-    process.on("SIGTERM", () => {
-      launcherDbg("[SIGNAL] SIGTERM — encerrando o launcher; o daemon segue no ar (pare com: prodmaker stop)");
-      process.exit(0);
-    });
-  } else {
-    process.on("SIGINT", () => {
-      // CTRL+C EXPLÍCITO do usuário: encerra o launcher E o daemon.
-      launcherDbg("[SIGNAL] SIGINT (CTRL+C) — encerrando launcher e daemon");
-      controlledStop = true;
-      matarArvore(backendPid);
-      limparPidGlobal(home);
-      process.exit(0);
-    });
-    process.on("SIGHUP", () => launcherDbg("[SIGNAL] SIGHUP — terminal fechando; daemon mantido no ar (use prodmaker stop)"));
-    process.on("SIGTERM", () => {
-      controlledStop = true;
-      matarArvore(backendPid);
-      limparPidGlobal(home);
-      process.exit(0);
-    });
-  }
+  // -------------------------------------------------------------------------
+  // ABSORÇÃO TOTAL DE SINAIS (regra inviolável) — o launcher NUNCA chama
+  // process.exit() por sinal. O MobaXterm envia SIGINT/SIGHUP ESPÚRIOS quando a
+  // janela perde o foco ou é minimizada; qualquer handler que trate isso como
+  // "encerrar" derruba a stack inteira (foi exatamente o bug do "encerra
+  // sozinho"). Os handlers apenas REGISTRAM. O encerramento real é sempre via
+  // `prodmaker stop` ou taskkill nos PIDs do lock.
+  // -------------------------------------------------------------------------
+  const absorver = (nome) => () =>
+    launcherDbg(`[SIGNAL] ${nome} recebido — ABSORVIDO (nao encerra; use: prodmaker stop)`);
+  process.on("SIGINT", absorver("SIGINT"));
+  process.on("SIGHUP", absorver("SIGHUP"));
+  process.on("SIGTERM", absorver("SIGTERM"));
 
   // 1) MATA A INSTÂNCIA ANTERIOR antes de subir a nova (lock global + portas).
   // 1) MATA A INSTÂNCIA ANTERIOR antes de subir a nova (lock global + portas).
@@ -1221,31 +1225,16 @@ async function commandRun() {
   watchdog.unref();
 
   // -------------------------------------------------------------------------
-  // TRAVA DE TERMINAL (readline) — o "casamento perfeito" com o listen HTTP.
-  // No MobaXterm (PTY) o http.listen sozinho NÃO segura o processo: o terminal
-  // encerra o Node se ele não estiver escutando o teclado ativamente. A
-  // interface readline mantém o stdin ativo — com os DOIS holds (listen HTTP +
-  // readline) o launcher só sai quando o terminal é realmente fechado, por
-  // `prodmaker stop` ou por taskkill. NUNCA por conta própria.
+  // TRAVA DE TERMINAL — sem readline (removido de propósito).
+  // O `readline` causava FALSO EOF no MobaXterm: sendo um PTY real, o
+  // `stdin.isTTY` é true e o `close` disparado por qualquer EOF espúrio
+  // encerrava o launcher (e a stack) no meio da execução. Os holds REAIS do
+  // launcher são: (a) o http.listen do servidor de UI (socket real) e (b) o
+  // setInterval global inquebrável no topo deste arquivo (nunca unref'ado).
+  // Com os dois, o Event Loop NUNCA esvazia — o launcher só morre por
+  // `prodmaker stop`, por taskkill ou por falha real diagnosticada.
   // -------------------------------------------------------------------------
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  rl.on("close", () => {
-    launcherDbg("[READLINE] terminal/stdin fechou");
-    // Terminal REAL (MobaXterm/PowerShell/CMD — stdin.isTTY) fechado: encerra o
-    // daemon Python junto e sai limpo, sem órfão segurando a porta. Em stdin
-    // NÃO-tty (pipe/redirecionamento/CI) o EOF pode chegar sem o usuário fechar
-    // nada — aí NÃO encerra: o launcher segue no ar (parar só com `prodmaker
-    // stop`). Esse guard impede que um EOF precoce derrube o servidor.
-    if (process.stdin && process.stdin.isTTY) {
-      console.error("\n[LAUNCHER] Terminal fechado. Encerrando...");
-      controlledStop = true;
-      matarArvore(backendPid);
-      limparPidGlobal(home);
-      process.exit(0);
-    }
-    launcherDbg("[READLINE] stdin nao-tty fechou - launcher mantido (use prodmaker stop)");
-  });
-  launcherDbg(`[RUN] holds ativos: http.listen(${ui.port}) + readline(stdin) — daemon pid ${backendPid}`);
+  launcherDbg(`[RUN] holds ativos: http.listen(${ui.port}) + setInterval global — daemon pid ${backendPid}`);
 }
 
 async function commandStop() {
@@ -1293,6 +1282,8 @@ async function commandStop() {
   } else {
     console.log("Nenhum ProdMaker ativo encontrado.");
   }
+  // Comando TERMINAL: com o setInterval global no ar, encerra de propósito.
+  process.exit(0);
 }
 
 async function commandDoctor() {
@@ -1334,6 +1325,8 @@ async function commandDoctor() {
   }
   const port = await pickPort(DEFAULT_PORT);
   console.log(`Porta ${DEFAULT_PORT}: ${port === DEFAULT_PORT ? "livre" : "ocupada"}`);
+  // Comando TERMINAL: com o setInterval global no ar, encerra de propósito.
+  process.exit(0);
 }
 
 async function main() {

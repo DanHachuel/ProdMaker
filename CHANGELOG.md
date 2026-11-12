@@ -3,6 +3,39 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.54 — 2026-11-12
+
+- **HOTFIX DEFINITIVO — o launcher não morre mais com `process.exit(0)` no
+  MobaXterm mesmo com o `http.listen` ativo.**
+- **Causa raiz (por que o http.listen não bastava):** o `readline` causava
+  **FALSO EOF** no PTY do MobaXterm. Sendo um terminal real, `stdin.isTTY` é
+  true — qualquer EOF espúrio disparava `rl.on('close')`, que chamava
+  `process.exit(0)` e derrubava a stack inteira (UI + daemon).
+- **Correções em `scripts/cli.mjs`:**
+  1. **`readline` removido do fluxo** (criação + handler `close`) — o FALSO EOF
+     não tem mais quem o traduza em encerramento;
+  2. **Trava global inquebrável:** `setInterval(() => {}, 60000)` no **escopo
+     global** do arquivo (fora de funções), **sem `.unref()`** — o Event Loop
+     NUNCA esvazia, em qualquer cenário (PTY, perda de foco, stdin fechado);
+  3. **Zero `process.exit` por sinal:** SIGINT/SIGHUP/SIGTERM agora são 100%
+     absorvidos (apenas registram) em todas as plataformas — encerrar é sempre
+     via `prodmaker stop` ou taskkill nos PIDs do lock;
+  4. **Comandos terminais encerram explícito:** com o timer global no ar,
+     `install`, `doctor` e `stop` chamam `process.exit(0)` no fim do trabalho
+     (sem isso ficariam pendurados para sempre);
+  5. **Prova de quem matou o processo:** interceptor global no `exit` grava
+     código + stack em `storage/logs/crash.log` (funciona mesmo com o terminal
+     já morto — EPIPE).
+- **Regra do AGENTS.md reescrita** (trava global + zero exit por sinal) e
+  **teste de CI ampliado para 15 verificações** (trava global sem unref,
+  readline ausente, handlers sem exit, comandos terminais com exit explícito,
+  crash.log) — regressão aborta o publish.
+- Verificado ponta a ponta: install (exit 0 em 2,4s) e doctor (0,2s) encerram
+  apesar do timer global; `run` sobe e **permanece**; EOF precoce no stdin NÃO
+  derruba; proxy UI→daemon responde em ambas as portas; `stop` encerra tudo e
+  libera as portas; crash.log registrou a stack exata de cada saída.
+- Bump: `0.1.54` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.53 — 2026-11-11
 
 - **HOTFIX CRÍTICO — UI e API escolhiam a MESMA porta (rodar o `run` duas

@@ -51,30 +51,68 @@ def test_trava_e_http_listen_real():
     assert "createServer" in content, "Servidor HTTP do launcher removido!"
     assert ".listen(" in content, "listen do socket HTTP removido — o terminal volta ao prompt!"
     # as travas que falharam no PTY do MobaXterm NÃO podem voltar
-    assert "await new Promise(() => {})" not in content, "Trava promise infininta reintroduzida!"
+    assert "await new Promise(() => {})" not in content, "Trava promise infinita reintroduzida!"
     assert "keepAliveTimer" not in content, "Timer keep-alive como trava reintroduzido!"
-    assert "setInterval(() => {}, 1000)" not in content, "Timer vazio como trava reintroduzido!"
+    assert "setInterval(() => {}, 1000)" not in content, "Timer vazio de 1s como trava reintroduzido!"
 
 
-def test_trava_readline_escuta_o_teclado():
-    """O MobaXterm (PTY) encerra o Node se ele não escuta o stdin: o readline é
-    o segundo hold, inseparável do listen HTTP ("casamento perfeito")."""
+def test_trava_global_setinterval_sem_unref():
+    """TRAVA GLOBAL INQUEBRÁVEL: setInterval no topo do arquivo (escopo global,
+    fora de funções), NUNCA com .unref() — o Event Loop não esvazia de jeito
+    nenhum (PTY do MobaXterm, EOF espúrio, stdin fechado)."""
     content = _conteudo()
-    assert "readline.createInterface" in content, "Trava readline (leitura do teclado) removida!"
-    assert "input: process.stdin" in content, "Readline nao escuta o stdin!"
-    assert "output: process.stdout" in content, "Readline nao escreve no terminal!"
-    assert 'rl.on("close"' in content, "Handler de fechamento do readline (terminal fechou) removido!"
+    assert "setInterval(() => {}, 60000)" in content, "Trava global de 60s removida!"
+    # a LINHA da trava global não pode chamar .unref() (só o código, não o comentário)
+    linha = next((l for l in content.split("\n") if "setInterval(() => {}, 60000)" in l), "")
+    codigo = linha.split("//")[0]
+    assert ".unref()" not in codigo, "A trava global NÃO pode levar .unref()!"
+    # precisa estar no ESCOPO GLOBAL: antes da primeira função declarada
+    pos = content.find("setInterval(() => {}, 60000)")
+    primeira_funcao = content.find("function ")
+    assert 0 < pos < primeira_funcao, "A trava global deve estar no topo do arquivo, fora de funções!"
 
 
-def test_readline_close_resiliente():
-    """Terminal REAL fechado (stdin.isTTY) encerra o daemon e sai limpo; stdin
-    NÃO-tty (pipe/redirecionamento/CI) NÃO pode derrubar o launcher — um EOF
-    precoce mataria o servidor sem o usuário fechar nada."""
+def test_readline_removido():
+    """O readline causava FALSO EOF no PTY do MobaXterm (isTTY=true) e matava o
+    launcher no meio da execução — foi removido de propósito."""
     content = _conteudo()
-    assert "Terminal fechado. Encerrando" in content, "Mensagem de encerramento no close removida!"
-    assert "process.stdin.isTTY" in content, "Guard isTTY removido — EOF de pipe derrubaria o launcher!"
-    assert "matarArvore(backendPid)" in content, "Close do terminal não mata o daemon (órfão na porta)!"
-    assert "launcher mantido" in content, "Ramo nao-tty (EOF precoce nao encerra) removido!"
+    assert "readline.createInterface" not in content, "readline reintroduzido (FALSO EOF derruba o launcher)!"
+    assert 'import readline' not in content, "Import do readline reintroduzido!"
+    assert "Terminal fechado. Encerrando" not in content, "Handler de close do readline reintroduzido!"
+
+
+def test_sinais_nunca_chamam_exit():
+    """NENHUM handler de sinal chama process.exit — absorção total (o MobaXterm
+    envia sinais espúrios; qualquer exit derruba a stack)."""
+    content = _conteudo()
+    # os handlers devem ser de absorção pura (apenas registram)
+    assert "ABSORVIDO" in content, "Absorção de sinais (log-only) removida!"
+    # entre o registro do SIGINT e o fim do bloco de handlers não pode haver exit
+    import re
+
+    for sinal in ("SIGINT", "SIGHUP", "SIGTERM"):
+        m = re.search(rf'process\.on\("{sinal}"[^\n]*\n(?:[^\n]*\n){{0,4}}?', content)
+        assert m, f"Handler de {sinal} removido!"
+        bloco = m.group(0)
+        assert "process.exit" not in bloco, f"Handler de {sinal} voltou a chamar process.exit — sinal espúrio mataria o launcher!"
+
+
+def test_comandos_terminais_encerram_explicito():
+    """Com o timer global no ar, install/doctor/stop PRECISAM encerrar com
+    process.exit(0) explícito — senão ficariam pendurados para sempre."""
+    content = _conteudo()
+    for cmd in ("commandInstall", "commandDoctor", "commandStop"):
+        i = content.find(f"async function {cmd}")
+        assert i > 0, f"{cmd} removido!"
+        bloco = content[i : content.find("\n}\n", i)]
+        assert "process.exit(0)" in bloco, f"{cmd} não encerra explicitamente — penduraria com o timer global!"
+
+
+def test_interceptor_de_saida_crash_log():
+    """A prova de quem matou o processo: código + stack em storage/logs/crash.log."""
+    content = _conteudo()
+    assert "crash.log" in content, "Interceptor de saída (crash.log) removido!"
+    assert "rastro de saida" in content, "Stack da saída não está sendo gravado!"
 
 
 def test_ui_serve_dist_e_proxyia_api():
@@ -141,8 +179,9 @@ def test_run_mata_instancias_antigas():
 
 def test_sinais_absorvidos_no_windows():
     content = _conteudo()
-    assert "SIGINT no Windows" in content, "Absorção do SIGINT no Windows removida!"
-    assert "SIGHUP no Windows" in content, "Absorção do SIGHUP no Windows removida!"
+    assert "ABSORVIDO" in content, "Absorção de sinais (log-only) removida!"
+    for sinal in ("SIGINT", "SIGHUP", "SIGTERM"):
+        assert f'process.on("{sinal}"' in content, f"Absorção do {sinal} removida!"
 
 
 def test_guarda_da_consola_e_isolamento():
@@ -160,8 +199,11 @@ def test_watchdog_com_teto():
 if __name__ == "__main__":
     testes = [
         test_trava_e_http_listen_real,
-        test_trava_readline_escuta_o_teclado,
-        test_readline_close_resiliente,
+        test_trava_global_setinterval_sem_unref,
+        test_readline_removido,
+        test_sinais_nunca_chamam_exit,
+        test_comandos_terminais_encerram_explicito,
+        test_interceptor_de_saida_crash_log,
         test_ui_serve_dist_e_proxyia_api,
         test_daemon_detached_unref_stdio_arquivo,
         test_python_base_com_pythonpath,

@@ -22,21 +22,26 @@ qualquer publicação.
 O launcher (`scripts/cli.mjs`) NÃO pode morrer sozinho. O MobaXterm envia sinais
 espúrios (SIGINT/SIGHUP) quando a janela perde o foco ou é minimizada, e escrever
 em console fechado gera EPIPE — ambos já derrubaram o app sem motivo. Por isso:
-1. **Arquitetura PandaNews (definitiva):** o `run` NÃO tenta "segurar" o
-   terminal com `setInterval`/`Promise`/`readline` — todos falham no PTY do
-   MobaXterm, que desanexa ou mata o Node. Em vez disso:
+1. **Trava GLOBAL inquebrável + zero `process.exit` por sinal:** no topo do
+   `cli.mjs` existe um `setInterval(() => {}, 60000)` **global, sem `.unref()`** —
+   o Event Loop do Node NUNCA esvazia (PTY do MobaXterm, perda de foco, EOF
+   espúrio, stdin fechado). O `readline` foi **removido** porque causava FALSO
+   EOF no PTY (`stdin.isTTY` = true) e encerrava o launcher no meio da execução.
    - o Python sobe como **daemon isolado**: binário **base** do venv +
      `PYTHONPATH` do venv (Windows), `spawn` com `detached: true`,
      `windowsHide: true`, `stdio: ['ignore', logFd, logFd]` (logs em
      `storage/logs/app.log`), `creationFlags: CREATE_NEW_PROCESS_GROUP` e
      `child.unref()` — fechar/minimizar/perder o foco **não** derruba nada;
-   - o launcher fica no ar por **DOIS holds reais, juntos** (o "casamento
-     perfeito"): `http.createServer().listen(8188)` serve `.runtime/frontend/dist`
-     (com SPA fallback) e encaminha `/api`, `/legal`, `/pages` e `/track` para o
-     daemon Python (porta 8189) **E** `readline.createInterface` escutando o
-     `stdin` — no PTY do MobaXterm nenhum dos dois sozinho segura o Node. Fechar
-     um terminal REAL (`stdin.isTTY`) encerra o daemon junto e sai limpo; stdin
-     não-tty (pipe/CI) nunca derruba o launcher;
+   - o launcher fica no ar pelos **dois holds reais**: o `http.listen()` do
+     servidor de UI (serve `.runtime/frontend/dist` com SPA fallback e encaminha
+     `/api`, `/legal`, `/pages` e `/track` para o daemon na porta 8189) **E** o
+     `setInterval` global inquebrável acima. Consequência: `install`, `doctor` e
+     `stop` (comandos terminais) encerram com `process.exit(0)` explícito no fim
+     do trabalho. **Nenhum handler de sinal chama `process.exit`** — todos apenas
+     registram; encerrar é sempre via `prodmaker stop` ou taskkill nos PIDs do
+     lock. Um interceptor global (`process.on('exit')`) grava código + stack em
+     `storage/logs/crash.log` — a prova de quem matou o processo, mesmo com o
+     terminal já morto.
    - o lock global `storage/prodmaker.pid` (JSON: launcher + backend + portas)
      permite ao `stop` encerrar tudo com `taskkill /PID /F /T` **silencioso**, e
      ao `run` matar instâncias antigas (PIDs do lock + donos das portas via
