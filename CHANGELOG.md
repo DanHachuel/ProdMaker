@@ -3,6 +3,32 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.55 — 2026-11-13
+
+- Docs: Adicionadas Skills de prevenção de regressões (launcher, estado,
+  frontend, sessões paralelas) e estrutura de testes.
+- Nova pasta `.agents/skills/` com 6 skills de leitura obrigatória:
+  `launcher-architecture-guard` (tríade do launcher: http.listen real, binário
+  base + PYTHONPATH, spawn detached/windowsHide/CREATE_NEW_PROCESS_GROUP/stdio
+  em arquivo; sinais absorvidos; runtime permanente; UI ≠ API nas portas),
+  `state-concurrency-guard` (SQLite WAL; JSON atômico .tmp+rename; lock no home),
+  `frontend-render-guard` (sonda SSR obrigatória em dois perfis, ErrorBoundary na
+  raiz e por rota, optional chaining, 401/403 tratados),
+  `parallel-session-guard` (git hygiene, versão do registry como verdade, rebase
+  obrigatório, proibição de sessões simultâneas sem branch),
+  `surgical-scope-guard` (diff mínimo, proibição de refatoração não solicitada,
+  lista de arquivos sensíveis) e `runtime-diagnostics-guard` (crash.log com
+  stack, app.log, SetConsoleCtrlHandler, timeout em spawnSync, procedimento de
+  diagnóstico antes de qualquer chute).
+- `AGENTS.md`: instrução no topo tornando a leitura das skills obrigatória antes
+  de qualquer tarefa.
+- Estrutura de testes preparada: `tests/test_state_concurrency.py` (placeholder
+  documentado) e `tests/test_frontend_render.js` (entrada Node que delega à sonda
+  `frontend/scripts/render-smoke.mjs`).
+- Nenhum código funcional alterado (launcher, backend e frontend intactos) —
+  apenas documentação, testes-estrutura e bump de versão.
+- Bump: `0.1.55` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.54 — 2026-11-12
 
 - **HOTFIX DEFINITIVO — o launcher não morre mais com `process.exit(0)` no

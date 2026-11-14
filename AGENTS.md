@@ -1,5 +1,10 @@
 # Instruções do Repositório ProdMaker
 
+> **⚠️ ATENÇÃO AGENTE:** Antes de iniciar qualquer tarefa, leia obrigatoriamente
+> todos os arquivos em `.agents/skills/*/SKILL.md`. Eles contêm regras críticas
+> para evitar regressões (morte do launcher, tela preta, EBUSY, corrupção de
+> estado). Siga-as à risca. Na dúvida, não altere arquivos sensíveis.
+
 ## Nunca abrir o navegador (REGRA ZERO)
 Ao iniciar, reiniciar ou atualizar a aplicação, é proibido abrir janela ou aba do
 navegador por qualquer meio (Node, Python ou sistema). O launcher apenas imprime
