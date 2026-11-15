@@ -29,7 +29,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.55";
+const APP_VERSION = "0.1.56";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -88,7 +88,7 @@ function matarProcessosDoRuntime(rt) {
     const lock = lerPidGlobal(home);
     if (lock) {
       for (const pid of [lock.launcher, lock.backend]) {
-        if (pid && pid !== process.pid) matarArvore(pid);
+        if (pid && pid !== process.pid) matarArvore(pid, { forcar: true, motivo: "lock global (install)" });
       }
     }
   } catch {}
@@ -97,13 +97,7 @@ function matarProcessosDoRuntime(rt) {
   try {
     const pidFile = path.join(home, "storage", "state", "launcher.pid");
     const pid = fs.existsSync(pidFile) ? fs.readFileSync(pidFile, "utf8").trim() : "";
-    if (pid) {
-      if (process.platform === "win32") {
-        spawnSync("taskkill", ["/F", "/T", "/PID", pid], { stdio: "ignore", windowsHide: true });
-      } else {
-        try { process.kill(Number(pid), "SIGKILL"); } catch {}
-      }
-    }
+    if (pid && pid !== String(process.pid)) matarArvore(Number(pid), { forcar: true, motivo: "pid file do launcher (install)" });
   } catch {}
   // 2) Portas do servidor — o daemon Python escuta na porta da API e o launcher
   //    na da UI: as DUAS faixas são varridas (silencioso, windowsHide).
@@ -117,7 +111,8 @@ function matarProcessosDoRuntime(rt) {
     const apiBase = preferred === API_PORT_DEFAULT ? API_PORT_DEFAULT + PORT_SCAN : API_PORT_DEFAULT;
     for (const base of [preferred, apiBase]) {
       for (let port = base; port < base + PORT_SCAN; port += 1) {
-        killPortProcess(port);
+        const dono = pidDaPorta(port);
+        if (dono && dono !== process.pid) matarArvore(dono, { home, motivo: "porta " + port + " (install)" });
       }
     }
   } catch {}
@@ -128,7 +123,7 @@ function matarProcessosDoRuntime(rt) {
       spawnSync(
         "powershell",
         ["-NoProfile", "-Command",
-          `Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%${rt}%' OR CommandLine LIKE '%-m app.main%'" | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }`],
+          `Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%${rt}%'" | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }`],
         { stdio: "ignore", windowsHide: true }
       );
     } catch {}
@@ -326,22 +321,6 @@ function pidVivo(pid) {
 // ---------------------------------------------------------------------------
 
 
-// Mata qualquer processo escutando na porta (Windows) antes de subir — evita que
-// um Python fantasma de execucao anterior ocupe a porta e derrube o novo.
-function killPortProcess(port) {
-  if (process.platform !== "win32") return;
-  try {
-    const res = spawnSync("cmd", ["/c", "netstat -ano | findstr :" + port + " | findstr LISTENING"], { encoding: "utf8", windowsHide: true });
-    const pids = new Set();
-    for (const line of (res.stdout || "").split(/\r?\n/)) {
-      const m = line.match(/(\d+)\s*$/);
-      if (m) pids.add(m[1]);
-    }
-    for (const pid of pids) {
-      try { spawnSync("taskkill", ["/F", "/PID", pid], { stdio: "ignore", windowsHide: true }); } catch {}
-    }
-  } catch {}
-}
 // ---------------------------------------------------------------------------
 // ARQUITETURA PandaNews (portada) — DAEMON isolado + UI servida pelo Node.
 //
@@ -506,7 +485,7 @@ function matarPidLegados(home) {
     try {
       if (!fs.existsSync(arquivo)) continue;
       const pid = Number(fs.readFileSync(arquivo, "utf8").trim());
-      if (pid && pid !== process.pid) matarArvore(pid);
+      if (pid && pid !== process.pid) matarArvore(pid, { forcar: true, motivo: "pid file legado (compat)" });
       fs.unlinkSync(arquivo);
     } catch {}
   }
@@ -516,30 +495,120 @@ function matarPidLegados(home) {
 // ignore + detached): um taskkill que piscasse uma janela de console negaria a
 // REGRA ZERO do terminal. No Windows `taskkill /PID /F /T` derruba o processo e
 // os filhos; no Unix o sinal negativo mata o grupo inteiro.
-function matarArvore(pid) {
-  if (!pid) return;
+// TRAVAS DE AUTO-SABOTAGEM (regra inviolável): NUNCA mata (a) o próprio
+// processo, (b) um ANCESTRO nosso (shell/npx/node pai — matar derruba a árvore
+// inteira, inclusive este launcher: foi a hipótese central do "encerra sozinho
+// sem crash.log"), (c) processo sem PROVA DE POSSE (a não ser com `forcar`,
+// usado só para PID vindo do lock ou da porta exata).
+function matarArvore(pid, opcoes = {}) {
+  if (!pid || Number(pid) === process.pid) return false;
+  const forcar = opcoes.forcar || false;
+  const home = opcoes.home || null;
+  const motivo = opcoes.motivo || "n/a";
+  if (!forcar) {
+    const ancestrais = pidsAncestrais();
+    if (ancestrais.has(Number(pid))) {
+      launcherDbg("[KILL-BLOQUEADO] pid " + pid + " eh ANCESTRO deste launcher - nao morre (" + motivo + ")");
+      return false;
+    }
+    if (home && !processoEhNosso(pid, home)) {
+      launcherDbg("[KILL-BLOQUEADO] pid " + pid + " NAO eh processo nosso - nao morre (" + motivo + ")");
+      return false;
+    }
+  }
+  let morto = false;
   try {
     if (process.platform === "win32") {
-      spawnSync("taskkill", ["/PID", String(pid), "/F", "/T"], { windowsHide: true, detached: true, stdio: "ignore" });
+      const r = spawnSync("taskkill", ["/PID", String(pid), "/F", "/T"], { windowsHide: true, detached: true, stdio: "ignore" });
+      morto = r.status === 0;
     } else {
       process.kill(-pid, "SIGKILL");
+      morto = true;
     }
   } catch {
-    /* processo já não existia */
+    morto = true;
   }
+  if (morto) launcherDbg("[KILL] pid " + pid + " encerrado (motivo: " + motivo + ")");
+  return morto;
 }
-
 // PID dono de uma porta em LISTEN (Windows, netstat silencioso; Unix: null).
+// MATCH EXATO: `:8188` precisa terminar em espaço/fim-de-linha — o match frouxo
+// (`:8188` como substring) casava com `:81880`, `:18188`, `:81889` e matava
+// processos INOCENTES de outros projetos.
 function pidDaPorta(port) {
   if (process.platform !== "win32") return null;
   try {
-    const res = spawnSync("cmd", ["/c", "netstat -ano | findstr :" + port + " | findstr LISTENING"], { encoding: "utf8", windowsHide: true });
+    const res = spawnSync("cmd", ["/c", "netstat -ano"], { encoding: "utf8", windowsHide: true });
+    const alvo = new RegExp(":" + port + "\\s");
     for (const linha of (res.stdout || "").split(/\r?\n/)) {
+      if (!alvo.test(linha) || !/LISTENING/i.test(linha)) continue;
       const m = linha.match(/(\d+)\s*$/);
       if (m && Number(m[1]) > 0) return Number(m[1]);
     }
   } catch {}
   return null;
+}
+
+// A linha de comando de um processo (Windows via CIM; Unix: null).
+function cmdDoProcesso(pid) {
+  if (process.platform !== "win32" || !pid) return null;
+  try {
+    const r = spawnSync("powershell", ["-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=$pid" -ErrorAction SilentlyContinue).CommandLine`], { encoding: "utf8", windowsHide: true });
+    const txt = (r.stdout || "").trim();
+    return txt || null;
+  } catch {
+    return null;
+  }
+}
+
+// O processo é NOSSO? Só então pode ser morto. Marcas: nosso HOME, nosso
+// .runtime, nosso pacote npm, o entry point do daemon (-m app.main) ou o
+// launcher (cli.mjs). Sem essa prova, NUNCA matar — o usuário roda outros
+// projetos (PandaNews, Thunderbolt) na mesma máquina e já matamos inocentes.
+function processoEhNosso(pid, home) {
+  if (!pid || pid === process.pid) return false;
+  const cmd = cmdDoProcesso(pid);
+  if (!cmd) return false;
+  const marcas = [
+    home,
+    path.join(home, ".runtime"),
+    path.join(home, "storage"),
+    "@danhachuel/prodmaker",
+    "@danhachuel\\prodmaker",
+    "prodmaker" + path.sep + "scripts",
+  ];
+  if (marcas.some((m) => cmd.includes(m))) return true;
+  // daemon: `-m app.main` — só conta se o PAI também for nosso (evita pegar o
+  // `app.main` de outro projeto que more na mesma máquina)
+  if (cmd.includes("-m app.main")) {
+    try {
+      const r = spawnSync("powershell", ["-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=$pid" -ErrorAction SilentlyContinue).ParentProcessId`], { encoding: "utf8", windowsHide: true });
+      const pai = Number((r.stdout || "").trim());
+      if (pai && processoEhNosso(pai, home)) return true;
+      // órfão de execução anterior: o lock sabe que é nosso
+      const lock = lerPidGlobal(home);
+      if (lock && lock.backend === pid) return true;
+    } catch {}
+  }
+  return false;
+}
+
+// Nossos ancestrais (shell, npx, node pai...) — NUNCA podem ser mortos: matar
+// um deles derruba a árvore inteira, inclusive este launcher.
+function pidsAncestrais() {
+  const ancestrais = new Set();
+  if (process.platform !== "win32") return ancestrais;
+  try {
+    let atual = process.ppid;
+    for (let i = 0; i < 8 && atual && atual > 0; i += 1) {
+      ancestrais.add(atual);
+      const r = spawnSync("powershell", ["-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=$atual" -ErrorAction SilentlyContinue).ParentProcessId`], { encoding: "utf8", windowsHide: true });
+      const pai = Number((r.stdout || "").trim());
+      if (!pai || pai === atual) break;
+      atual = pai;
+    }
+  } catch {}
+  return ancestrais;
 }
 
 // Duas redes de segurança antes de subir uma nova instância: os PIDs do lock
@@ -552,8 +621,7 @@ async function matarInstanciasAntigas(home, uiBase, apiBase) {
   if (lock) {
     for (const pid of [lock.launcher, lock.backend]) {
       if (pid && pid !== process.pid) {
-        matarArvore(pid);
-        mortos += 1;
+        if (matarArvore(pid, { forcar: true, motivo: "lock global (run)" })) mortos += 1;
       }
     }
   }
@@ -562,8 +630,7 @@ async function matarInstanciasAntigas(home, uiBase, apiBase) {
       if (!fs.existsSync(arquivo)) continue;
       const pid = Number(fs.readFileSync(arquivo, "utf8").trim());
       if (pid && pid !== process.pid) {
-        matarArvore(pid);
-        mortos += 1;
+        if (matarArvore(pid, { forcar: true, motivo: "pid file legado (run)" })) mortos += 1;
       }
       fs.unlinkSync(arquivo);
     } catch {}
@@ -572,8 +639,7 @@ async function matarInstanciasAntigas(home, uiBase, apiBase) {
     for (let port = base; port < base + PORT_SCAN; port += 1) {
       const dono = pidDaPorta(port);
       if (dono && dono !== process.pid) {
-        matarArvore(dono);
-        mortos += 1;
+        if (matarArvore(dono, { home, motivo: "porta " + port + " (run)" })) mortos += 1;
       }
     }
   }
@@ -709,7 +775,12 @@ function spawnDaemon(home, rt, apiPort) {
   } catch {}
   // stdio por FD: spawn detached no Windows não aceita path, só descritor.
   const logFd = fs.openSync(logPath, "a");
-  const filho = spawn(bin, pythonArgsFor(bin), {
+  // spawn NATIVO (nunca cross-spawn): o cross-spawn embrulha o comando em
+  // `cmd.exe /d /s /c` no Windows, o que (a) pode rasgar `detached`/
+  // `windowsHide`/`creationFlags`/`stdio` — a tríade inteira — e (b) deixa um
+  // wrapper cmd.exe na árvore, cuja morte leva o daemon junto. python.exe é um
+  // executável direto: o spawn nativo do Node entrega as flags exatas.
+  const filho = nodeSpawn(bin, pythonArgsFor(bin), {
     cwd: rt, // RUNTIME PERMANENTE: executa de .runtime, nunca do cache do npx
     detached: true, // grupo PRÓPRIO: imune ao CTRL_C_EVENT do console (0xC000013A)
     creationFlags: process.platform === "win32" ? CREATE_NEW_PROCESS_GROUP : 0,
@@ -1145,7 +1216,7 @@ async function commandRun() {
   } catch (err) {
     console.error(`[ERRO FATAL] não foi possível ouvir a porta ${port}: ${err && err.message ? err.message : err}`);
     console.error("Encerre o processo que a ocupa ou rode `prodmaker stop`.");
-    matarArvore(backendPid);
+    matarArvore(backendPid, { forcar: true, motivo: "UI nao subiu" });
     limparPidGlobal(home);
     process.exit(1);
   }
@@ -1174,7 +1245,7 @@ async function commandRun() {
       console.error("  (app.log indisponível)");
     }
     console.error("Diagnóstico completo: npm run debug (sobe o Python direto, sem daemon).");
-    matarArvore(backendPid);
+    matarArvore(backendPid, { forcar: true, motivo: "daemon nao respondeu" });
     limparPidGlobal(home);
     process.exit(1);
   }
@@ -1202,7 +1273,7 @@ async function commandRun() {
       console.error("O launcher está sendo encerrado para não entrar em loop infinito.");
       console.error("Diagnóstico completo em: " + storagePath(home, "logs", "app.log"));
       console.error("Se a porta estiver ocupada por outra instância, rode `prodmaker stop`.");
-      matarArvore(backendPid);
+      matarArvore(backendPid, { forcar: true, motivo: "teto de reinicios do watchdog" });
       limparPidGlobal(home);
       process.exit(1);
       return;
@@ -1234,6 +1305,18 @@ async function commandRun() {
   // Com os dois, o Event Loop NUNCA esvazia — o launcher só morre por
   // `prodmaker stop`, por taskkill ou por falha real diagnosticada.
   // -------------------------------------------------------------------------
+  // HEARTBEAT (regra inviolável do diagnostics-guard): se o launcher morrer por
+  // um kill externo (taskkill /F, fechamento de console — que NÃO roda o
+  // handler de exit), o arquivo fica com a data da última vida. Uma morte
+  // silenciosa passa a ser "morreu entre 14:22:09 e 14:22:19", não um mistério.
+  const heartbeatPath = storagePath(home, "logs", "launcher-heartbeat");
+  const bater = () => {
+    try {
+      fs.writeFileSync(heartbeatPath, `${new Date().toISOString()} launcher=${process.pid} daemon=${backendPid} ui=${ui.port} api=${apiPort}\n`);
+    } catch {}
+  };
+  bater();
+  setInterval(bater, 10000).unref(); // o loop já é segurado pelo setInterval global
   launcherDbg(`[RUN] holds ativos: http.listen(${ui.port}) + setInterval global — daemon pid ${backendPid}`);
 }
 
@@ -1253,8 +1336,7 @@ async function commandStop() {
   if (lock) {
     for (const [nome, pid] of [["Launcher", lock.launcher], ["Servidor", lock.backend]]) {
       if (pid && pid !== process.pid) {
-        matarArvore(pid);
-        mortos += 1;
+        if (matarArvore(pid, { forcar: true, motivo: "stop (lock " + nome + ")" })) mortos += 1;
         console.log(`${nome} (pid ${pid}) encerrado.`);
       }
     }
@@ -1270,8 +1352,7 @@ async function commandStop() {
     for (let port = base; port < base + PORT_SCAN; port += 1) {
       const dono = pidDaPorta(port);
       if (dono && dono !== process.pid) {
-        matarArvore(dono);
-        mortos += 1;
+        if (matarArvore(dono, { home, motivo: "stop (porta " + port + ")" })) mortos += 1;
         console.log(`Porta ${port}: processo do servidor encerrado.`);
       }
     }
@@ -1308,6 +1389,15 @@ async function commandDoctor() {
   const dist = path.join(rt, "frontend", "dist", "index.html");
   console.log(`Frontend build (.runtime/frontend/dist): ${fs.existsSync(dist) ? "OK" : "pendente (rode install)"}`);
   // Status do daemon pelo LOCK GLOBAL (fallback: PID file de versão anterior).
+  // HEARTBEAT: quando o launcher morreu por kill externo (sem handler de exit),
+  // o heartbeat diz EXATAMENTE quando ele estava vivo — a primeira pista.
+  const hb = storagePath(home, "logs", "launcher-heartbeat");
+  if (fs.existsSync(hb)) {
+    const quando = fs.readFileSync(hb, "utf8").trim().split("\n").pop();
+    console.log(`Launcher (ultimo sinal de vida): ${quando}`);
+  } else {
+    console.log("Launcher (ultimo sinal de vida): nenhum registro");
+  }
   const lock = lerPidGlobal(home);
   if (lock && lock.backend) {
     const estado = pidVivo(lock.backend)

@@ -115,6 +115,41 @@ def test_interceptor_de_saida_crash_log():
     assert "rastro de saida" in content, "Stack da saída não está sendo gravado!"
 
 
+def test_heartbeat_datavel():
+    """Morte por kill externo (sem handler de exit) tem que ficar datável:
+    heartbeat gravado a cada 10s e lido pelo doctor."""
+    content = _conteudo()
+    assert "launcher-heartbeat" in content, "Heartbeat removido — morte por kill externo vira mistério!"
+    assert "setInterval(bater, 10000)" in content, "Heartbeat não está sendo gravado periodicamente!"
+
+
+def test_sem_cross_spawn_no_caminho_critico():
+    """O daemon sobe com spawn NATIVO: o cross-spawn embrulha em cmd.exe no
+    Windows e pode rasgar detached/windowsHide/creationFlags/stdio (a tríade)."""
+    content = _conteudo()
+    assert "nodeSpawn(bin" in content, "Daemon voltou a usar cross-spawn (wrapper cmd.exe)!"
+    # o filtro que matava o entry point de QUALQUER projeto não pode voltar
+    assert "LIKE '%-m app.main%'" not in content, "Varredura CIM genérica (cross-fire entre projetos) reintroduzida!"
+
+
+def test_matar_tem_travas_anti_auto_sabotagem():
+    """Nenhum taskkill pode pegar o próprio launcher, seus ancestrais ou
+    processo sem prova de posse (foi a hipótese central do 'encerra sozinho')."""
+    content = _conteudo()
+    assert "pidsAncestrais" in content, "Proteção de ancestrais removida!"
+    assert "processoEhNosso" in content, "Prova de posse antes de matar removida!"
+    assert "KILL-BLOQUEADO" in content, "Log de kill bloqueado removido!"
+    # toda morte nossa tem motivo registrado
+    assert content.count('motivo: "') >= 6, "Kills sem motivo registrado (forense impossível)!"
+
+
+def test_pid_da_porta_match_exato():
+    """:8188 não pode casar com :81880/:18188 — match frouxo matava inocentes."""
+    content = _conteudo()
+    assert '":" + port + "\\\\s"' in content or '":" + port + "\\s"' in content, "pidDaPorto voltou ao match frouxo (findstr)!"
+    assert 'findstr :" + port' not in content, "Varredura de porta por substring (findstr) reintroduzida!"
+
+
 def test_ui_serve_dist_e_proxyia_api():
     """A UI (Node) serve o frontend buildado e encaminha as rotas do backend."""
     content = _conteudo()
@@ -204,6 +239,10 @@ if __name__ == "__main__":
         test_sinais_nunca_chamam_exit,
         test_comandos_terminais_encerram_explicito,
         test_interceptor_de_saida_crash_log,
+        test_heartbeat_datavel,
+        test_sem_cross_spawn_no_caminho_critico,
+        test_matar_tem_travas_anti_auto_sabotagem,
+        test_pid_da_porta_match_exato,
         test_ui_serve_dist_e_proxyia_api,
         test_daemon_detached_unref_stdio_arquivo,
         test_python_base_com_pythonpath,

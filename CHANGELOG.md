@@ -3,6 +3,45 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.56 — 2026-11-15
+
+- **HOTFIX CRÍTICO — auto-sabotagem no start (launcher morto pela própria
+  rotina de "encerrar instância anterior").**
+- **Diagnóstico (skills `runtime-diagnostics-guard` + `launcher-architecture-guard`):**
+  o `crash.log` NÃO tinha entrada para a morte do `run` — só para `install`.
+  Um `process.exit()` nosso sempre grava lá; a ausência provou que a morte foi
+  um **kill externo** (taskkill /F /T), não um caminho de exit do código.
+- **As linhas que podiam matar o processo errado (todas corrigidas):**
+  1. `matarProcessosDoRuntime` (install) fazia varredura CIM com
+     `CommandLine LIKE '%${rt}%' OR CommandLine LIKE '%-m app.main%'` — o
+     segundo filtro pegava o entry point de **qualquer** projeto da máquina
+     (o usuário roda PandaNews e Thunderbolt, mesma família de código):
+     cross-fire entre projetos. Agora o sweep só casa o **nosso** `.runtime`.
+  2. `pidDaPorta`/`killPortProcess` usavam `findstr :8188` — **substring**:
+     `:8188` casa com `:81880`, `:18188`, `:81889`. Match agora é **exato**
+     (`:8188` + fronteira de campo); `killPortProcess` (match frouxo, sem
+     prova de posse) foi removido.
+  3. `matarArvore` não tinha travas: um PID velho/lock sujo que por acaso fosse
+     um **ancestral** (shell/npx/node pai) derrubava a árvore inteira — inclusive
+     o launcher recém-iniciado. Agora ninguém morre sem: (a) não ser o próprio
+     processo, (b) não ser ancestral, (c) ter prova de posse (linha de comando
+     com nosso home/.runtime/pacote, ou `-m app.main` cujo pai/lock seja nosso).
+     Cada decisão é registrada (`[KILL]` / `[KILL-BLOQUEADO]` com motivo).
+  4. O daemon subia com **cross-spawn**, que embrulha o comando em
+     `cmd.exe /d /s /c` no Windows — pode rasgar `detached`/`windowsHide`/
+     `creationFlags`/`stdio` (a tríade inteira) e deixa um wrapper na árvore.
+     Agora usa spawn **nativo** (`nodeSpawn`).
+- **Novo heartbeat** (`storage/logs/launcher-heartbeat`, gravado a cada 10s e
+  lido pelo `doctor`): uma morte por kill externo — que não roda o handler de
+  exit — fica **datável** ("morreu entre 16:54:05 e 16:54:15"), não é mais
+  mistério. Todas as outras proteções seguem intactas (setInterval global sem
+  unref, sinais 100% absorvidos, UI≠API, lock, watchdog com teto).
+- Teste de CI ampliado para **19 verificações** (heartbeat, sem cross-spawn no
+  caminho crítico, travas anti-auto-sabotagem, match exato de porta, sweep CIM
+  sem cross-fire). Verificado ponta a ponta: 1º run, 2º run substituindo o 1º
+  (o novo sobrevive), 30s de vigília, heartbeat no doctor, stop limpo.
+- Bump: `0.1.56` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.55 — 2026-11-13
 
 - Docs: Adicionadas Skills de prevenção de regressões (launcher, estado,
