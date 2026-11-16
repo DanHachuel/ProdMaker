@@ -3,6 +3,34 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.57 — 2026-11-16
+
+- **HOTFIX — auditoria de `stdin` e `exit` no launcher (fim do encerramento no
+  MobaXterm/npx).**
+- **Auditoria completa de `scripts/cli.mjs` (resultado documentado):**
+  - **stdin: ZERO dependência.** Nenhum `readline.createInterface`, nenhum
+    `rl.on('close')`, nenhum `process.stdin.resume()`, nenhum listener de dados
+    — o falso EOF do PTY (MobaXterm/npx fechando o pipe de entrada) não tem
+    como virar evento de encerramento. Adicionado `process.stdin.pause()`
+    explícito: o teclado fica dormente para sempre.
+  - **Trava global do Event Loop:** `setInterval(() => {}, 60000)` no topo do
+    arquivo, **sem `.unref()`** — confirmado em teste de CI (inclusive a
+    exigência de estar no escopo global, antes da primeira função).
+  - **http.listen intacto:** nenhum `server.close()` no servidor de UI (o único
+    `close()` do arquivo é do helper de teste de porta); nenhum `process.exit()`
+    depois do box — as únicas saídas são os comandos terminais
+    (install/doctor/stop) e os caminhos de falha com diagnóstico.
+  - **Sinais:** SIGINT/SIGHUP/SIGTERM 100% absorvidos (apenas log) — nenhum
+    chama `process.exit()` (travado por teste de CI).
+- **Novo:** falha de porta da UI agora grava no `crash.log` antes de qualquer
+  saída (`logarFalhaRede`) — se o listen falhar, a prova existe mesmo com o
+  terminal morto.
+- **Teste de CI ampliado para 21 verificações** (auditoria de stdin, falha de
+  porta no crash.log, mais as 19 já existentes). Verificado ponta a ponta:
+  launcher sobe com **stdin fechado (NUL)**, sobrevive 40s em EOF, servidor
+  servindo, heartbeat no ar, `stop` encerrando tudo e liberando as portas.
+- Bump: `0.1.57` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.56 — 2026-11-15
 
 - **HOTFIX CRÍTICO — auto-sabotagem no start (launcher morto pela própria

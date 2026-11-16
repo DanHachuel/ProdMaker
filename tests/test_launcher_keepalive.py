@@ -143,6 +143,24 @@ def test_matar_tem_travas_anti_auto_sabotagem():
     assert content.count('motivo: "') >= 6, "Kills sem motivo registrado (forense impossível)!"
 
 
+def test_sem_dependencia_de_stdin():
+    """Auditoria de stdin: o launcher NÃO pode depender do teclado. O falso EOF
+    do PTY (MobaXterm/npx fechando o pipe) não pode virar evento de encerramento.
+    Só é permitido `process.stdin.pause()` (dormente para sempre)."""
+    content = _conteudo()
+    assert "readline.createInterface" not in content, "readline reintroduzido (FALSO EOF)!"
+    assert "process.stdin.resume" not in content, "stdin.resume reintroduzido (dependência do teclado)!"
+    assert "process.stdin.on(" not in content, "Listener de dados no stdin reintroduzido!"
+    assert "process.stdin.pause()" in content, "stdin deveria ser pausado explicitamente!"
+
+
+def test_falha_de_porta_vai_para_o_crash_log():
+    """Se a porta da UI falhar, a prova tem que existir antes de qualquer exit."""
+    content = _conteudo()
+    assert "logarFalhaRede" in content, "Registro de falha de rede (crash.log) removido!"
+    assert "server.once(\"error\"" in content or 'server.on("error"' in content, "Tratamento de erro do listen removido!"
+
+
 def test_pid_da_porta_match_exato():
     """:8188 não pode casar com :81880/:18188 — match frouxo matava inocentes."""
     content = _conteudo()
@@ -243,6 +261,8 @@ if __name__ == "__main__":
         test_sem_cross_spawn_no_caminho_critico,
         test_matar_tem_travas_anti_auto_sabotagem,
         test_pid_da_porta_match_exato,
+        test_sem_dependencia_de_stdin,
+        test_falha_de_porta_vai_para_o_crash_log,
         test_ui_serve_dist_e_proxyia_api,
         test_daemon_detached_unref_stdio_arquivo,
         test_python_base_com_pythonpath,

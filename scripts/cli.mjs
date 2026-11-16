@@ -29,7 +29,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.56";
+const APP_VERSION = "0.1.57";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -743,6 +743,17 @@ function criarUiServer(apiPort, distDir) {
 
 // Coloca a UI para ouvir (com fallback de porta em EADDRINUSE). É ESTE listen
 // que segura o launcher no terminal do MobaXterm — nunca timer/promise/readline.
+// Grava uma falha de rede no crash.log ANTES de qualquer exit — se a porta da
+// UI falhar, a prova existe mesmo que o terminal já tenha morrido.
+function logarFalhaRede(mensagem, detalhe) {
+  launcherDbg("[REDE] " + mensagem + (detalhe ? " :: " + detalhe : ""));
+  try {
+    const crash = path.join(resolveHome(), "storage", "logs", "crash.log");
+    fs.mkdirSync(path.dirname(crash), { recursive: true });
+    fs.appendFileSync(crash, `[${new Date().toISOString()}] [REDE] ${mensagem}\n  ${detalhe || ""}\n`);
+  } catch {}
+}
+
 async function listenUi(uiPort, apiPort, distDir, limite) {
   const server = criarUiServer(apiPort, distDir);
   return new Promise((resolve, reject) => {
@@ -755,6 +766,8 @@ async function listenUi(uiPort, apiPort, distDir, limite) {
         resolve(listenUi(proxima, apiPort, distDir, limite));
         return;
       }
+      // Qualquer outro erro da porta UI: registrar no crash.log antes de seguir.
+      logarFalhaRede(`falha ao ouvir a porta ${uiPort} da UI`, err && err.stack ? err.stack : String(err));
       reject(err);
     });
     server.listen(uiPort, "127.0.0.1", () => resolve({ server, port: uiPort }));
@@ -1305,6 +1318,13 @@ async function commandRun() {
   // Com os dois, o Event Loop NUNCA esvazia — o launcher só morre por
   // `prodmaker stop`, por taskkill ou por falha real diagnosticada.
   // -------------------------------------------------------------------------
+  // AUDITORIA DE STDIN (regra inviolável): o launcher NÃO depende do teclado.
+  // Nenhum readline, nenhum listener de dados, nenhum resume — o falso EOF do
+  // PTY (MobaXterm/npx fechando o pipe de entrada) não tem mais como virar
+  // evento de encerramento. `pause()` explícito: stdin fica dormente para sempre.
+  try {
+    process.stdin.pause();
+  } catch {}
   // HEARTBEAT (regra inviolável do diagnostics-guard): se o launcher morrer por
   // um kill externo (taskkill /F, fechamento de console — que NÃO roda o
   // handler de exit), o arquivo fica com a data da última vida. Uma morte
