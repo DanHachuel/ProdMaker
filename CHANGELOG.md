@@ -3,6 +3,34 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.58 — 2026-11-20
+
+- **HOTFIX DEFINITIVO — o npx sai da execução do dia a dia (`prodmaker.cmd`).**
+- **Causa provável do "volta ao PS C:\...>":** o `npx` é um script Node que
+  encaminha a execução pelo cache e, ao decidir encerrar, leva a árvoreinteira
+  — com `http.listen` ativo e sem `exit` no código (auditado), a morte só
+  podia vir de fora. A solução é não passar por ele.
+- **`prodmaker.cmd` (novo):** o `install` gera, na RAÍZ do `PRODMAKER_HOME`, um
+  atalho que chama o Node DIRETO no launcher que vive dentro do `.runtime`:
+  `node "<home>\.runtime\scripts\cli.mjs" %*`. Para isso o `install` agora copia
+  também `scripts/cli.mjs` para o `.runtime`. Uso:
+  `prodmaker.cmd run` / `stop` / `install` / `doctor`.
+- **Cinto de segurança no `cli.mjs`:**
+  - `global.meuKeepAlive = setInterval(...)` — referência **global** do
+    keep-alive (impossível de coletar; nunca com `.unref()`);
+  - `server.on('close')` no servidor de UI: alerta no crash.log quando o socket
+    fechar — **sem** `process.exit()`;
+  - absorção de sinais (SIGINT/SIGHUP/SIGTERM) movida para o **topo do arquivo**:
+    vale para todos os comandos, apenas registra no crash.log, nunca chama exit.
+- `doctor` passou a reportar o caminho do atalho.
+- Verificado ponta a ponta: install copia o launcher e gera o `.cmd`;
+  `prodmaker.cmd run` **sobe e permanece** (launcher vivo 25s+, servidor
+  servindo, sem npx nenhum); `prodmaker.cmd stop` encerra tudo e libera as
+  portas; npx continua funcionando para quem preferir.
+- Teste de CI ampliado para **25 verificações** (atalho sem npx, keepalive
+  global, sinais no topo, alerta de fechamento do socket).
+- Bump: `0.1.58` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.57 — 2026-11-16
 
 - **HOTFIX — auditoria de `stdin` e `exit` no launcher (fim do encerramento no

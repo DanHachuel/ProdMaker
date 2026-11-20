@@ -29,7 +29,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.57";
+const APP_VERSION = "0.1.58";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -45,6 +45,27 @@ const DESIGNATED_HOME = "C:\\Users\\danha\\Documents\\REPOSITORIO\\ProdMaker";
 // explícito no fim do seu trabalho — só o `run` (daemon + UI) fica no ar.
 // ---------------------------------------------------------------------------
 setInterval(() => {}, 60000); // Trava global inquebrável — NUNCA usar .unref()
+// Referência GLOBAL do keep-alive (cinto de segurança): o timer fica preso a
+// `global`, impossível de ser coletado — o Event Loop do Node NUNCA esvazia.
+global.meuKeepAlive = setInterval(() => {}, 1000 * 60 * 60);
+
+// ---------------------------------------------------------------------------
+// ABSORÇÃO TOTAL DE SINAIS (regra inviolável) — no TOPO do arquivo, valendo para
+// TODOS os comandos: o launcher NUNCA chama process.exit() por sinal. O
+// MobaXterm/npx envia SIGINT/SIGHUP/SIGTERM espúrios (perda de foco, minimizar,
+// pipe fechando); qualquer handler que trate isso como "encerrar" derruba a
+// stack inteira — foi exatamente o bug do "encerra sozinho". Apenas REGISTRAM.
+// ---------------------------------------------------------------------------
+const absorverSinal = (nome) => () => {
+  try {
+    const crash = path.join(resolveHome(), "storage", "logs", "crash.log");
+    fs.mkdirSync(path.dirname(crash), { recursive: true });
+    fs.appendFileSync(crash, `[${new Date().toISOString()}] [SIGNAL] ${nome} recebido — ABSORVIDO (nao encerra; use: prodmaker stop)\n`);
+  } catch {}
+};
+process.on("SIGINT", absorverSinal("SIGINT"));
+process.on("SIGHUP", absorverSinal("SIGHUP"));
+process.on("SIGTERM", absorverSinal("SIGTERM"));
 
 const DEFAULT_SETTINGS = {
   schema: 1,
@@ -75,8 +96,10 @@ function runtimeDir(home) {
   return path.join(home || resolveHome(), ".runtime");
 }
 
-// O que o app precisa para rodar fora do cache do npx.
-const RUNTIME_ITENS = ["app", "frontend/dist", "seed", "legal", "requirements.txt", "package.json"];
+// O que o app precisa para rodar fora do cache do npx. Inclui o PRÓPRIO
+// launcher (scripts/cli.mjs): o `prodmaker.cmd` gerado no install chama essa
+// cópia direto no Node — assim o npx sai da execução do dia a dia.
+const RUNTIME_ITENS = ["app", "frontend/dist", "scripts/cli.mjs", "seed", "legal", "requirements.txt", "package.json"];
 
 // Mata TUDO que segura o runtime antigo (launcher registrado, servidor na porta
 // e processos com o .runtime na linha de comando) — sem isso a cópia falha com
@@ -134,6 +157,26 @@ function matarProcessosDoRuntime(rt) {
 // NUNCA encerra em silêncio: qualquer falha (EBUSY, permissão, fonte ausente)
 // sobe como exceção com mensagem clara (o commandInstall transforma em
 // [ERRO FATAL] e exit(1)).
+// Gera o `prodmaker.cmd` na RAIZ do PRODMAKER_HOME: chama o Node DIRETO na
+// cópia do launcher dentro do .runtime — o npx sai da execução do dia a dia.
+// (O npx é um script Node: quando ele decide encerrar, leva a árvore inteira;
+// rodando por este .cmd, só o Node manda no processo.)
+function gerarAtalhoCmd(home, rt) {
+  const cmd = path.join(home, "prodmaker.cmd");
+  const launcher = path.join(rt, "scripts", "cli.mjs");
+  const conteudo = [
+    "@echo off",
+    "REM ProdMaker — atalho direto (sem npx). Gerado pelo install.",
+    `REM Uso: prodmaker.cmd [install^|run^|stop^|doctor]`,
+    `node "${launcher}" %*`,
+    "",
+  ].join("\r\n");
+  try {
+    fs.writeFileSync(cmd, conteudo, "utf8");
+  } catch {}
+  return cmd;
+}
+
 function prepararRuntime(rt) {
   matarProcessosDoRuntime(rt);
   // Limpa o .runtime antigo. No Windows, arquivos abertos por um processo recém-
@@ -756,6 +799,17 @@ function logarFalhaRede(mensagem, detalhe) {
 
 async function listenUi(uiPort, apiPort, distDir, limite) {
   const server = criarUiServer(apiPort, distDir);
+  // Alerta de fechamento do socket: se o servidor de UI fechar (bug, kill de
+  // rede, esgotamento de portas), registramos no crash.log. NUNCA damos exit
+  // aqui — apenas logamos; o destino do processo fica com os handles reais.
+  server.on("close", () => {
+    launcherDbg("[REDE] ALERTA: o servidor HTTP da UI foi fechado (porta " + uiPort + ")");
+    try {
+      const crash = path.join(resolveHome(), "storage", "logs", "crash.log");
+      fs.mkdirSync(path.dirname(crash), { recursive: true });
+      fs.appendFileSync(crash, `[${new Date().toISOString()}] [REDE] ALERTA: servidor HTTP da UI fechado (porta ${uiPort})\n`);
+    } catch {}
+  });
   return new Promise((resolve, reject) => {
     server.once("error", (err) => {
       // EADDRINUSE: tenta a próxima, mas NUNCA a porta da API (o daemon a ama).
@@ -1092,6 +1146,10 @@ async function commandInstall(flags) {
     console.error(`[ERRO FATAL] Falha ao copiar arquivos para o .runtime: ${err && err.message ? err.message : err}`);
     process.exit(1);
   }
+  // Atalho direto (sem npx): prodmaker.cmd na raiz do home chama o Node no
+  // launcher que está DENTRO do .runtime — o npx sai da execução do dia a dia.
+  const atalho = gerarAtalhoCmd(home, rt);
+  console.log(`Atalho direto (sem npx): ${atalho}`);
 
   console.log("");
   console.log("[✓] Instalação e isolamento do runtime concluídos com sucesso.");
@@ -1185,21 +1243,7 @@ async function commandRun() {
   // encerramento real é sempre via `prodmaker stop` (ou taskkill no PID).
   // -------------------------------------------------------------------------
   let backendPid = null; // PID do daemon que ESTA sessão iniciou (null = reaproveitado)
-  // -------------------------------------------------------------------------
-  // ABSORÇÃO TOTAL DE SINAIS (regra inviolável) — o launcher NUNCA chama
-  // process.exit() por sinal. O MobaXterm envia SIGINT/SIGHUP ESPÚRIOS quando a
-  // janela perde o foco ou é minimizada; qualquer handler que trate isso como
-  // "encerrar" derruba a stack inteira (foi exatamente o bug do "encerra
-  // sozinho"). Os handlers apenas REGISTRAM. O encerramento real é sempre via
-  // `prodmaker stop` ou taskkill nos PIDs do lock.
-  // -------------------------------------------------------------------------
-  const absorver = (nome) => () =>
-    launcherDbg(`[SIGNAL] ${nome} recebido — ABSORVIDO (nao encerra; use: prodmaker stop)`);
-  process.on("SIGINT", absorver("SIGINT"));
-  process.on("SIGHUP", absorver("SIGHUP"));
-  process.on("SIGTERM", absorver("SIGTERM"));
 
-  // 1) MATA A INSTÂNCIA ANTERIOR antes de subir a nova (lock global + portas).
   // 1) MATA A INSTÂNCIA ANTERIOR antes de subir a nova (lock global + portas).
   //    Varre a faixa da UI (preferred..) e da API (API_PORT_DEFAULT..).
   await matarInstanciasAntigas(home, preferred, API_PORT_DEFAULT);
@@ -1409,6 +1453,9 @@ async function commandDoctor() {
   const dist = path.join(rt, "frontend", "dist", "index.html");
   console.log(`Frontend build (.runtime/frontend/dist): ${fs.existsSync(dist) ? "OK" : "pendente (rode install)"}`);
   // Status do daemon pelo LOCK GLOBAL (fallback: PID file de versão anterior).
+  // Atalho direto (sem npx) — a forma recomendada de rodar no dia a dia.
+  const atalho = path.join(home, "prodmaker.cmd");
+  console.log(`Atalho direto (sem npx): ${fs.existsSync(atalho) ? atalho : "ausente (rode install)"}`);
   // HEARTBEAT: quando o launcher morreu por kill externo (sem handler de exit),
   // o heartbeat diz EXATAMENTE quando ele estava vivo — a primeira pista.
   const hb = storagePath(home, "logs", "launcher-heartbeat");

@@ -143,6 +143,47 @@ def test_matar_tem_travas_anti_auto_sabotagem():
     assert content.count('motivo: "') >= 6, "Kills sem motivo registrado (forense impossível)!"
 
 
+def test_keepalive_com_referencia_global():
+    """Cinto de segurança: o timer do keep-alive tem referência em `global` —
+    impossível de ser coletado; o Event Loop do Node NUNCA esvazia."""
+    content = _conteudo()
+    assert "global.meuKeepAlive" in content, "Referência global do keep-alive removida!"
+    # e não pode levar .unref()
+    linha = next((l for l in content.split("\n") if "global.meuKeepAlive" in l), "")
+    assert ".unref()" not in linha, "O keep-alive global NÃO pode levar .unref()!"
+
+
+def test_sinais_absorvidos_no_topo_do_arquivo():
+    """A absorção de sinais fica no TOPO do arquivo (escopo global) — vale para
+    todos os comandos, não só para o `run`."""
+    content = _conteudo()
+    assert "absorverSinal" in content, "Absorção de sinais removida!"
+    # os handlers no topo, antes da primeira função
+    pos = content.find('process.on("SIGINT", absorverSinal')
+    primeira_funcao = content.find("function ")
+    assert 0 < pos < primeira_funcao, "Absorção de sinais não está no escopo global (topo do arquivo)!"
+    # cada handler apenas registra — nunca exit
+    assert "process.exit" not in content.split("absorverSinal")[1].split("\n}")[0], \
+        "Handler de sinal voltou a chamar process.exit — sinal espúrio mataria o launcher!"
+
+
+def test_atalho_direto_sem_npx():
+    """O install gera `prodmaker.cmd` no home chamando o Node no launcher que
+    está DENTRO do .runtime — o npx sai da execução do dia a dia."""
+    content = _conteudo()
+    assert "gerarAtalhoCmd" in content, "Gerador do prodmaker.cmd removido!"
+    assert "prodmaker.cmd" in content, "Atalho prodmaker.cmd removido!"
+    assert "scripts/cli.mjs" in content, "Launcher não está sendo copiado para o .runtime!"
+    assert 'node "${launcher}" %*' in content, "O .cmd não chama o Node diretamente!"
+
+
+def test_servidor_ui_alerta_de_fechamento():
+    """Se o socket da UI fechar, registramos no crash.log — NUNCA damos exit."""
+    content = _conteudo()
+    assert 'server.on("close"' in content, "Alerta de fechamento do servidor de UI removido!"
+    assert "ALERTA: o servidor HTTP da UI foi fechado" in content, "Mensagem de alerta removida!"
+
+
 def test_sem_dependencia_de_stdin():
     """Auditoria de stdin: o launcher NÃO pode depender do teclado. O falso EOF
     do PTY (MobaXterm/npx fechando o pipe) não pode virar evento de encerramento.
@@ -262,6 +303,10 @@ if __name__ == "__main__":
         test_matar_tem_travas_anti_auto_sabotagem,
         test_pid_da_porta_match_exato,
         test_sem_dependencia_de_stdin,
+        test_keepalive_com_referencia_global,
+        test_sinais_absorvidos_no_topo_do_arquivo,
+        test_atalho_direto_sem_npx,
+        test_servidor_ui_alerta_de_fechamento,
         test_falha_de_porta_vai_para_o_crash_log,
         test_ui_serve_dist_e_proxyia_api,
         test_daemon_detached_unref_stdio_arquivo,
