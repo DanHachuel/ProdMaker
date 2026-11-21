@@ -208,7 +208,7 @@ export default function Produtos() {
 
   return (
     <section>
-      <h1>Seus Produtos</h1>
+      <h1>Meus Produtos</h1>
       <p className="subtitle">Analise, aprove e anuncie seus produtos.</p>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>

@@ -4,8 +4,8 @@ import { useApp } from "../App";
 import { supabase } from "../supabase";
 
 const MENU = [
-  { to: "/", emoji: "📦", label: "Seus Produtos" },
   { to: "/dashboard", emoji: "📊", label: "AdsDashboard" },
+  { to: "/", emoji: "📦", label: "Meus Produtos" },
   {
     emoji: "🌐", label: "AdsHosting", children: [
       { to: "/hosting/dominios", label: "Domínios" },

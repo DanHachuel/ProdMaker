@@ -8,7 +8,7 @@ const STEP_HINTS = {
   1: {
     rota: "/",
     texto: "Adicione ou aprove um produto. Na aprovação (com LLM ativo) o plano de ataque é gerado automaticamente.",
-    cta: "Ir para Seus Produtos",
+    cta: "Ir para Meus Produtos",
   },
   2: {
     rota: "/adspages",

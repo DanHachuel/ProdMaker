@@ -3,6 +3,24 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.59 — 2026-11-21
+
+- **UI — menu lateral reordenado e "Seus Produtos" renomeado para "Meus Produtos".**
+- `frontend/src/components/Sidebar.jsx`: **AdsDashboard agora é o primeiro item**
+  do menu e **Meus Produtos** vem logo abaixo (antes era o inverso); o rótulo
+  "Seus Produtos" passou a ser **"Meus Produtos"**.
+- `frontend/src/pages/Produtos.jsx`: título interno da página alterado para
+  **"Meus Produtos"** (a legenda "Analise, aprove e anuncie seus produtos." é
+  texto corrido e foi mantida).
+- `frontend/src/pages/AdsBot.jsx`: CTA "Ir para Seus Produtos" → "Ir para Meus
+  Produtos" (aponta para a mesma tela).
+- `frontend/dist` **rebuildado** (o pacote npm serve o build — o usuário não
+  precisa rodar build). Sonda SSR (`render-smoke.mjs`): 59/59 verificações
+  passaram nos dois perfis antes do build.
+- `.gitignore`: ignora o `prodmaker.cmd` gerado pelo install (artefato local,
+  não vai mais sujar o repositório).
+- Bump: `0.1.59` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.58 — 2026-11-20
 
 - **HOTFIX DEFINITIVO — o npx sai da execução do dia a dia (`prodmaker.cmd`).**

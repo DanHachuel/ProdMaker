@@ -17,3 +17,6 @@ node_modules/
 
 # runtime de execucao (gerado pelo install; nunca versionar)
 .runtime/
+
+# atalho gerado pelo install (node direto, sem npx)
+prodmaker.cmd
