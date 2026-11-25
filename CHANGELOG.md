@@ -3,6 +3,37 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.60 — 2026-11-24
+
+- **HOTFIX DEFINITIVO — réplica do PandaNews: o servidor sobrevive à morte do
+  launcher (fim do "encerra sozinho" no MobaXterm).**
+- **Análise (read-only) do repositório irmão** `DanHachuel/PandaNews`
+  (`scripts/start.js`, hotfix 0.6.01/0.6.02) identificou 3 padrões que o
+  ProdMaker não tinha:
+  1. **ÂNCora `manterLauncherVivo()`**: timer com o MAIOR valor que o Node aceita
+     (`KEEPALIVE_INTERVAL_MS = 2147483647` ≈ 24,8 dias — handle ativo que nunca
+     dispara, em variável de módulo) + `process.stdin.resume()` mantendo o TTY
+     ligado. Com handle ativo o Event Loop **não pode drenar**.
+  2. **PORTA PÚBLICA ÚNICA**: o daemon Python serve a UI (frontend/dist com SPA)
+     E a API na MESMA porta — quem serve é o app, não um proxy Node. O launcher
+     Node fica só como supervisor (âncora + watchdog).
+  3. **SINAIS de encerramento limpo** (`encerrarSessao`): SIGINT/SIGTERM matam o
+     daemon pela árvore (`taskkill /PID /F /T`), limpam o lock e saem com código
+     0. SIGHUP (perda de foco do MobaXterm) é absorvido.
+- **A linha que resolveu o critério do usuário:** a UI deixou de ser servida
+  pelo Node. Antes, o `http.createServer().listen(8188)` do launcher era a única
+  âncora — e também o ÚNICO servidor da UI: se o Node caísse (terminal, npx ou
+  kill externo), a porta 8188 morria com ele. Agora o **daemon responde na 8188**:
+  mesmo que o launcher morra, o servidor continua no ar.
+- **Código morto removido:** todo o proxy/servidor de UI do Node
+  (`proxyApi`, `criarUiServer`, `listenUi`, `logarFalhaRede`, `PROXY_PREFIXES`,
+  `MIME_TYPES`, import `httpRequest`) saiu do launcher — um processo a menos no
+  caminho crítico e nada de código que possa ser re-ligado por engano.
+- Teste de fogo (pelo `prodmaker.cmd`, sem npx): run sobe; **matar o launcher
+  Node → o servidor SEGUE respondendo** (`/api/health` OK, `/api-keys` 200);
+  `stop` encerra tudo e libera as portas. Travas de CI: 23/23 + 5/5.
+- Bump: `0.1.60` (`app/main.py`, `package.json`, `scripts/cli.mjs`).
+
 ## 0.1.59 — 2026-11-21
 
 - **UI — menu lateral reordenado e "Seus Produtos" renomeado para "Meus Produtos".**

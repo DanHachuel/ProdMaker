@@ -1,31 +1,29 @@
 """Teste de CI — regra inviolável da arquitetura do launcher (Windows/MobaXterm).
 
 Lê o `scripts/cli.mjs` e falha se qualquer proteção contra o "app encerra
-sozinho" / "janela preta de CMD" for removida. Modelo PandaNews (portado):
+sozinho" / "janela preta de CMD" for removida. **Réplica do PandaNews
+(`scripts/start.js`, hotfix 0.6.01/0.6.02):**
 
-1. TRAVA DO LAUNCHER = DOIS holds reais, juntos: `http.createServer().listen(8188)`
-   servindo `.runtime/frontend/dist` (proxy `/api`, `/legal`, `/pages`, `/track`
-   para o daemon) **E** `readline.createInterface` escutando o `stdin` — no PTY
-   do MobaXterm nenhum dos dois sozinho segura o Node. NÃO vale `setInterval`/
-   `await new Promise(() => {})` (todos falharam).
-2. READLINE RESILIENTE: fechamento de terminal REAL (`stdin.isTTY`) encerra o
-   daemon Python junto e sai limpo; stdin NÃO-tty (pipe/CI) NÃO derruba nada.
-2. DAEMON ISOLADO: o Python sobe com `detached: true` +
-   `creationFlags: CREATE_NEW_PROCESS_GROUP (0x00000200)` + `windowsHide: true` +
-   `stdio: ['ignore', logFd, logFd]` (storage/logs/app.log) + `child.unref()` —
-   fechar/minimizar/perder o foco do terminal não derruba o servidor.
-3. BINÁRIO BASE + PYTHONPATH (Windows): o `venv/Scripts/python.exe` é um
+1. ÂNCORA DO LAUNCHER (`manterLauncherVivo`): timer com o MAIOR valor que o
+   Node aceita (`2147483647` ≈ 24,8 dias — handle ativo que nunca dispara) em
+   variável de módulo, mais `stdin.resume()` (mantém o TTY ligado, mas NÃO é a
+   âncora). Com handle ativo o Event Loop não drena.
+2. PORTA PÚBLICA ÚNICA: o daemon Python serve a UI (frontend/dist com SPA) E a
+   API na MESMA porta — quem serve é o app, não um proxy Node. Se o launcher
+   morrer, o SERVIDOR CONTINUA RESPONDENDO.
+3. SINAIS (réplica do PandaNews): SIGINT/SIGTERM caem em `encerrarSessao`
+   (daemon pela árvore /PID /T, lock limpo, saída limpa). SIGHUP (perda de foco
+   do MobaXterm) é ABSORVIDO — não derruba nada.
+4. DAEMON ISOLADO: `detached: true` + `windowsHide: true` +
+   `creationFlags: CREATE_NEW_PROCESS_GROUP (0x00000200)` +
+   `stdio: ['ignore', logFd, logFd]` (storage/logs/app.log) + `child.unref()`.
+5. BINÁRIO BASE + PYTHONPATH (Windows): o `venv/Scripts/python.exe` é um
    redirecionador cujo processo NETO nasce sem as flags de ocultação e abre um
    console novo (a janela preta). Sobe-se o interpretador base (lido do
    `venv/pyvenv.cfg`) com o site-packages do venv no `PYTHONPATH`.
-4. LOCK GLOBAL `storage/prodmaker.pid`: o `run` mata instâncias antigas (PIDs do
-   lock + donos das portas via netstat) antes de subir a nova; o `stop` mata
-   launcher e daemon com `taskkill /PID /F /T` SILENCIOSO (windowsHide + ignore).
-5. ABSORÇÃO DE SINAIS: SIGINT/SIGHUP absorvidos no Windows (sinal espúrio do
-   MobaXterm ao perder foco/minimizar não pode derrubar nada).
-6. GUARDA DA CONSOLA: `guardConsoleStream` absorve EPIPE (console fechado).
-7. WATCHDOG COM TETO: reergue o daemon em quedas silenciosas, no máximo
-   MAX_REINICIOS vezes (sem loop infinito de spawns).
+6. LOCK GLOBAL `storage/prodmaker.pid` + kill silencioso (`taskkill /PID /F /T`
+   com windowsHide + stdio ignore).
+7. CRASH.LOG: código + stack em toda saída — a prova de quem matou o processo.
 
 Roda sozinho:  python tests/test_launcher_keepalive.py
 Roda no pytest: pytest tests/test_launcher_keepalive.py
@@ -42,21 +40,77 @@ def _conteudo() -> str:
 
 
 # ---------------------------------------------------------------------------
-# 1) A trava do launcher são DOIS holds reais: socket HTTP (listen) + readline
-#    (stdin do teclado). Nenhum dos dois sozinho segura o PTY do MobaXterm.
+# 1) ÂNCORA DO LAUNCHER — réplica exata do manterLauncherVivo do PandaNews
 # ---------------------------------------------------------------------------
 
-def test_trava_e_http_listen_real():
+def test_ancora_keepalive_timer_maximo():
+    """A âncora é um timer com o MAIOR valor aceito pelo Node (~24.8 dias):
+    handle ativo que nunca dispara — o Event Loop não pode drenar."""
     content = _conteudo()
-    assert "createServer" in content, "Servidor HTTP do launcher removido!"
-    assert ".listen(" in content, "listen do socket HTTP removido — o terminal volta ao prompt!"
-    # as travas que falharam no PTY do MobaXterm NÃO podem voltar
-    assert "await new Promise(() => {})" not in content, "Trava promise infinita reintroduzida!"
-    assert "keepAliveTimer" not in content, "Timer keep-alive como trava reintroduzido!"
-    assert "setInterval(() => {}, 1000)" not in content, "Timer vazio de 1s como trava reintroduzido!"
+    assert "KEEPALIVE_INTERVAL_MS = 2147483647" in content, "Âncora com o timer máximo removida!"
+    assert "manterLauncherVivo" in content, "Função da âncora removida!"
+    # a chamada da âncora tem de estar no ESCOPO DO MÓDULO (topo do arquivo) —
+    # antes de qualquer função de comando (install/run/stop/doctor)
+    pos_chamada = content.find("manterLauncherVivo();")
+    pos_primeiro_comando = min(
+        i for i in (
+            content.find("async function commandInstall"),
+            content.find("async function commandRun"),
+            content.find("async function commandStop"),
+            content.find("async function commandDoctor"),
+        ) if i > 0
+    )
+    assert 0 < pos_chamada < pos_primeiro_comando, "A âncora não está sendo chamada no topo do arquivo (escopo do módulo)!"
 
 
-def test_trava_global_setinterval_sem_unref():
+def test_ancora_nao_usa_unref():
+    """A âncora NUNCA leva .unref() — handle desreferenciado não segura o loop."""
+    content = _conteudo()
+    linha = next((l for l in content.split("\n") if "setInterval(() => {}, KEEPALIVE_INTERVAL_MS)" in l), "")
+    assert linha.strip(), "Linha da âncora não encontrada!"
+    assert ".unref()" not in linha, "A âncora levou .unref() — o Event Loop pode drenar!"
+
+
+def test_stdin_resume_nao_e_ancora():
+    """Réplica do PandaNews: stdin.resume() mantém o TTY ligado (ajuda o Ctrl+C
+    em terminais remotos), mas a âncora é o TIMER — não o stdin."""
+    content = _conteudo()
+    assert 'process.stdin.resume()' in content, "stdin.resume() removido (réplica do PandaNews)!"
+    # e NÃO pode existir readline (o falso EOF do PTY já matou o launcher antes)
+    assert "readline.createInterface" not in content, "readline reintroduzido (FALSO EOF no PTY)!"
+
+
+def test_sinais_encerramento_limpo():
+    """Réplica do PandaNews: SIGINT/SIGTERM caem em `encerrarSessao` (daemon pela
+    árvore, lock limpo, saída limpa) — NUNCA process.exit solto no handler.
+    SIGHUP (perda de foco do MobaXterm) é ABSORVIDO: não derruba nada."""
+    content = _conteudo()
+    assert "encerrarSessao" in content, "Encerramento gracioso (réplica PandaNews) removido!"
+    assert 'process.on("SIGINT", () => encerrarSessao' in content, "SIGINT não passa pelo encerrarSessao!"
+    assert 'process.on("SIGTERM", () => encerrarSessao' in content, "SIGTERM não passa pelo encerrarSessao!"
+    # SIGHUP absorvido (só log)
+    assert 'process.on("SIGHUP"' in content, "Handler de SIGHUP removido!"
+    assert "ABSORVIDO" in content, "SIGHUP deixou de ser absorvido!"
+    # o handler de sinal NUNCA chama exit direto
+    import re
+    for sinal in ("SIGINT", "SIGTERM"):
+        m = re.search(rf'process\.on\("{sinal}"[^\n]*\n(?:[^\n]*\n){{0,3}}?', content)
+        assert m, f"Handler de {sinal} removido!"
+        assert "process.exit" not in m.group(0), f"Handler de {sinal} voltou a chamar process.exit — sinal espúrio mataria o launcher!"
+
+
+def test_porta_publica_unica():
+    """O daemon serve UI+API na MESMA porta (o app serve o dist): se o launcher
+    Node morrer, o SERVIDOR CONTINUA RESPONDENDO na porta."""
+    content = _conteudo()
+    assert "spawnDaemon(home, rt, port)" in content, "O daemon não está subindo na porta pública!"
+    assert "waitReady(port)" in content, "A espera de prontidão não usa a porta pública!"
+    # o run não pode mais criar o proxy de UI (caminho que morria com o Node)
+    run = content.split("async function commandRun")[1].split("async function commandStop")[0]
+    assert "listenUi(" not in run, "O run voltou a usar o proxy Node de UI (porta morre com o launcher)!"
+
+
+def test_atalho_direto_sem_npx():
     """TRAVA GLOBAL INQUEBRÁVEL: setInterval no topo do arquivo (escopo global,
     fora de funções), NUNCA com .unref() — o Event Loop não esvazia de jeito
     nenhum (PTY do MobaXterm, EOF espúrio, stdin fechado)."""
@@ -143,28 +197,13 @@ def test_matar_tem_travas_anti_auto_sabotagem():
     assert content.count('motivo: "') >= 6, "Kills sem motivo registrado (forense impossível)!"
 
 
-def test_keepalive_com_referencia_global():
-    """Cinto de segurança: o timer do keep-alive tem referência em `global` —
-    impossível de ser coletado; o Event Loop do Node NUNCA esvazia."""
+def test_sem_dependencia_de_teclado_exceto_ttv():
+    """Sem readline/listeners de dados: só o `stdin.resume()` do PandaNews
+    (mantém o TTY ligado, não é âncora)."""
     content = _conteudo()
-    assert "global.meuKeepAlive" in content, "Referência global do keep-alive removida!"
-    # e não pode levar .unref()
-    linha = next((l for l in content.split("\n") if "global.meuKeepAlive" in l), "")
-    assert ".unref()" not in linha, "O keep-alive global NÃO pode levar .unref()!"
-
-
-def test_sinais_absorvidos_no_topo_do_arquivo():
-    """A absorção de sinais fica no TOPO do arquivo (escopo global) — vale para
-    todos os comandos, não só para o `run`."""
-    content = _conteudo()
-    assert "absorverSinal" in content, "Absorção de sinais removida!"
-    # os handlers no topo, antes da primeira função
-    pos = content.find('process.on("SIGINT", absorverSinal')
-    primeira_funcao = content.find("function ")
-    assert 0 < pos < primeira_funcao, "Absorção de sinais não está no escopo global (topo do arquivo)!"
-    # cada handler apenas registra — nunca exit
-    assert "process.exit" not in content.split("absorverSinal")[1].split("\n}")[0], \
-        "Handler de sinal voltou a chamar process.exit — sinal espúrio mataria o launcher!"
+    assert "readline.createInterface" not in content, "readline reintroduzido (FALSO EOF no PTY)!"
+    assert "process.stdin.on(" not in content, "Listener de dados no stdin reintroduzido!"
+    assert 'process.stdin.resume()' in content, "stdin.resume() (réplica PandaNews) removido!"
 
 
 def test_atalho_direto_sem_npx():
@@ -182,24 +221,6 @@ def test_servidor_ui_alerta_de_fechamento():
     content = _conteudo()
     assert 'server.on("close"' in content, "Alerta de fechamento do servidor de UI removido!"
     assert "ALERTA: o servidor HTTP da UI foi fechado" in content, "Mensagem de alerta removida!"
-
-
-def test_sem_dependencia_de_stdin():
-    """Auditoria de stdin: o launcher NÃO pode depender do teclado. O falso EOF
-    do PTY (MobaXterm/npx fechando o pipe) não pode virar evento de encerramento.
-    Só é permitido `process.stdin.pause()` (dormente para sempre)."""
-    content = _conteudo()
-    assert "readline.createInterface" not in content, "readline reintroduzido (FALSO EOF)!"
-    assert "process.stdin.resume" not in content, "stdin.resume reintroduzido (dependência do teclado)!"
-    assert "process.stdin.on(" not in content, "Listener de dados no stdin reintroduzido!"
-    assert "process.stdin.pause()" in content, "stdin deveria ser pausado explicitamente!"
-
-
-def test_falha_de_porta_vai_para_o_crash_log():
-    """Se a porta da UI falhar, a prova tem que existir antes de qualquer exit."""
-    content = _conteudo()
-    assert "logarFalhaRede" in content, "Registro de falha de rede (crash.log) removido!"
-    assert "server.once(\"error\"" in content or 'server.on("error"' in content, "Tratamento de erro do listen removido!"
 
 
 def test_pid_da_porta_match_exato():
@@ -292,8 +313,12 @@ def test_watchdog_com_teto():
 
 if __name__ == "__main__":
     testes = [
-        test_trava_e_http_listen_real,
-        test_trava_global_setinterval_sem_unref,
+        test_ancora_keepalive_timer_maximo,
+        test_ancora_nao_usa_unref,
+        test_stdin_resume_nao_e_ancora,
+        test_sem_dependencia_de_teclado_exceto_ttv,
+        test_sinais_encerramento_limpo,
+        test_porta_publica_unica,
         test_readline_removido,
         test_sinais_nunca_chamam_exit,
         test_comandos_terminais_encerram_explicito,
@@ -302,13 +327,7 @@ if __name__ == "__main__":
         test_sem_cross_spawn_no_caminho_critico,
         test_matar_tem_travas_anti_auto_sabotagem,
         test_pid_da_porta_match_exato,
-        test_sem_dependencia_de_stdin,
-        test_keepalive_com_referencia_global,
-        test_sinais_absorvidos_no_topo_do_arquivo,
         test_atalho_direto_sem_npx,
-        test_servidor_ui_alerta_de_fechamento,
-        test_falha_de_porta_vai_para_o_crash_log,
-        test_ui_serve_dist_e_proxyia_api,
         test_daemon_detached_unref_stdio_arquivo,
         test_python_base_com_pythonpath,
         test_lock_global_prodmaker_pid,
