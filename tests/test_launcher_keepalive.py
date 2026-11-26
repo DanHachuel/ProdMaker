@@ -308,7 +308,51 @@ def test_guarda_da_consola_e_isolamento():
 
 def test_watchdog_com_teto():
     content = _conteudo()
-    assert "MAX_REINICIOS" in content, "Teto de reinícios do watchdog removido (loop infinito de spawns)!"
+    # DECLARAÇÃO, não apenas uso: sem o `const`, o caminho de falha do watchdog
+    # estourava ReferenceError silencioso e o daemon NUNCA era reerguido
+    # (hotfix 0.1.61 — a string deuso existia, a constante não).
+    assert "const MAX_REINICIOS = " in content, "Declaração do teto de reinícios removida!"
+    assert "const FALHAS_PARA_REINICIAR = " in content, "Declaração do gatilho de falhas removida!"
+    assert "[WATCHDOG] falha" in content, "Log de batida do watchdog removido (falha indebugável)!"
+
+
+def test_espelho_de_logs_do_daemon():
+    """O terminal ACOMPANHA o Python: linhas novas de app.log são ecoadas com o
+    prefixo [daemon]. Proibido usar stdio 'pipe' para isso — pipe fechado na
+    morte do launcher derrubaria o daemon com BrokenPipe."""
+    content = _conteudo()
+    assert "espelharLogsDoDaemon" in content, "Espelho do log do daemon removido — terminal cego!"
+    assert "[daemon] " in content, "Prefixo [daemon] do espelho removido!"
+    assert 'stdio: ["ignore", logFd, logFd]' in content, "Stdio do daemon mudou — só pode ser FD de arquivo!"
+
+
+def test_alarme_quando_daemon_morre():
+    """Morte do daemon NÃO passa em silêncio: [ERRO FATAL] imediato + últimas
+    linhas do app.log (também no daemon reerguido pelo watchdog)."""
+    content = _conteudo()
+    assert "[ERRO FATAL] O servidor Python morreu" in content, "Alarme de morte do daemon removido!"
+    assert 'filhoAtual.on("exit"' in content or 'filho.on("exit"' in content, "Vigia do exit do daemon removida!"
+    assert "vigiarDaemon(novo)" in content, "Daemon reerguido pelo watchdog ficou sem vigia!"
+
+
+def test_debug_log_append_nao_sobrescreve():
+    """launcher-debug.log é APPEND com rotação por tamanho — a prova do que
+    aconteceu entre sessões (morte silenciosa) vivia no rodapé do log anterior."""
+    content = _conteudo()
+    assert "appendFileSync(LAUNCHER_DEBUG_LOG" in content, "Debug log voltou a sobrescrever!"
+    assert "1024 * 1024" in content, "Rotação por tamanho do debug log removida!"
+
+
+MAIN_PY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "main.py")
+
+
+def test_app_registra_prova_de_boot():
+    """O FastAPI grava uma linha de boot no app.log (versão/porta/frontend): sem
+    ela, a morte silenciosa do daemon não deixa rasto algum."""
+    with open(MAIN_PY, "r", encoding="utf-8") as handle:
+        content = handle.read()
+    assert "ouvindo em http://127.0.0.1" in content, "Prova de boot no app.log removida!"
+    assert "app.log" in content, "Escrita da prova de boot no app.log removida!"
 
 
 if __name__ == "__main__":
@@ -330,6 +374,10 @@ if __name__ == "__main__":
         test_atalho_direto_sem_npx,
         test_daemon_detached_unref_stdio_arquivo,
         test_python_base_com_pythonpath,
+        test_espelho_de_logs_do_daemon,
+        test_alarme_quando_daemon_morre,
+        test_debug_log_append_nao_sobrescreve,
+        test_app_registra_prova_de_boot,
         test_lock_global_prodmaker_pid,
         test_stop_mata_com_taskkill_silencioso,
         test_run_mata_instancias_antigas,

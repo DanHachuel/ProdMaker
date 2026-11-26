@@ -3,6 +3,49 @@
 Todas as versões seguem a etiqueta visual `MAJOR.MINOR.PATCH` com patch de dois dígitos
 (o registry NPM normaliza `0.1.00` → `0.1.0`).
 
+## 0.1.61 — 2026-11-26
+
+- **BUG REAL CORRIGIDO — o watchdog NUNCA reergueu o daemon (ReferenceError
+  silencioso).** Diagnóstico pelos logs (crash.log/launcher-debug.log/app.log,
+  conforme o diagnostics-guard): o caminho de falha do watchdog referenciava
+  `FALHAS_PARA_REINICIAR`/`MAX_REINICIOS` sem as constantes existirem — cada
+  batida estourava `ReferenceError` que caía no `unhandledRejection` e morria em
+  silêncio no arquivo. Resultado: daemon morto = `ERR_CONNECTION_REFUSED`
+  permanente até o próximo `run` (o sintoma relatado pelo usuário). Corrigido e
+  **provado ponta a ponta**: morte do daemon → `[WATCHDOG] falha 3/3` →
+  `reiniciando daemon (tentativa 1/3)` → daemon novo → API 200 de novo (~40s).
+- **Terminal deixa de ficar cego — o launcher agora ACOMPANHA o Python:**
+  - espelho ao vivo: linhas novas de `storage/logs/app.log` ecoadas no terminal
+    com prefixo `[daemon]` (leitura por offset; **nunca** `stdio: 'pipe'` — pipe
+    fechado na morte do launcher derrubaria o daemon com BrokenPipe);
+  - alarme imediato: `[ERRO FATAL] O servidor Python morreu.` + código/sinal +
+    últimas linhas do app.log no `exit` do daemon (também no daemon reerguido
+    pelo watchdog);
+  - `launcher-debug.log` passa a fazer APPEND com rotação por tamanho — a prova
+    do que aconteceu entre sessões (morte silenciosa) vivia no rodapé do log
+    anterior e era destruída a cada start.
+- **Prova de boot no app.log (`app/main.py`):** linha `ProdMaker <versão> ouvindo
+  em http://127.0.0.1:<porta> (frontend: <dist>)` — sem ela, morte silenciosa do
+  daemon não deixava rastro (só o bootstrap do launcher, que não distingue
+  "subiu" de "matou"). + cache headers: `index.html` no-store, `/assets/*` com
+  max-age (atualização de versão aparece na hora).
+- **Sobre o `StaticFiles` pedido:** analisado e **não aplicado** com evidência —
+  o sintoma era CONNECTION_REFUSED (nada ouvindo), não 404, e o catch-all do SPA
+  já serve `dist/`, `/` e deep links (validado: 200 em `/` e `/produtos`).
+  Montar `StaticFiles("/")` antes do catch-all REGREDIRIA os deep links do React
+  Router (404 em rota sem arquivo). Mantida a serving atual, com cache headers.
+- **Diagnóstico da morte externa (honestidade):** o app.log não tinha traceback e
+  o crash.log não tinha entrada → o daemon foi morto por kill externo
+  (SIGKILL/taskkill), não crashou. Não foi possível provar o autor daqui (o
+  sandbox não reproduz o PTY do MobaXterm); com o watchdog corrigido, qualquer
+  morte externa agora reergue o servidor sozinha em ~40s. Testado também: o
+  daemon sobrevive ao `taskkill` do launcher (DETACHED_PROCESS).
+- `tests/test_launcher_keepalive.py` (27 verificações): novas travas para o
+  espelho `[daemon]`, o alarme FATAL, o debug log em APPEND e a prova de boot —
+  e o teste do watchdog agora exige a DECLARAÇÃO das constantes (a string de uso
+  existia; a constante não — falha que o teste antigo não pegava).
+- Bump: `0.1.61` (`package.json`, `scripts/cli.mjs`, `app/main.py` + canonical).
+
 ## 0.1.60 — 2026-11-24
 
 - **HOTFIX DEFINITIVO — réplica do PandaNews: o servidor sobrevive à morte do

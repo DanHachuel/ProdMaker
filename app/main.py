@@ -32,7 +32,7 @@ from .services.store import PRODMAKER_HOME, STORAGE, STATE, ensure_state_dir, ge
 shutdown.instalar()
 configure_logging()
 
-APP_VERSION = "0.1.60"
+APP_VERSION = "0.1.61"
 COOKIE_NAME = "prodmaker_session"
 SESSION_DAYS = 30
 MASTER_ALIAS = "admin"
@@ -334,7 +334,7 @@ def health():
 
 @app.get("/api/version")
 def version():
-    return {"version": APP_VERSION, "canonical": "0.1.60"}
+    return {"version": APP_VERSION, "canonical": "0.1.61"}
 
 
 @app.get("/api/settings")
@@ -427,10 +427,22 @@ def preview_page(page_id: str):
     raise HTTPException(status_code=404, detail="Página não encontrada.")
 
 
+def _resposta_estatica(caminho: Path):
+    """Arquivo estático com política de cache: HTML sempre fresco (atualização de
+    versão aparece na hora), assets versionados (/assets/) com hash aceitam cache
+    longo (1 dia)."""
+    resposta = FileResponse(caminho)
+    if caminho.name.lower() == "index.html":
+        resposta.headers["cache-control"] = "no-store"
+    elif "assets" in str(caminho.parent).replace("\\", "/").lower():
+        resposta.headers["cache-control"] = "public, max-age=86400"
+    return resposta
+
+
 def _spa_index():
     index_path = DIST_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path)
+        return _resposta_estatica(index_path)
     return HTMLResponse(
         """<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -454,7 +466,7 @@ def spa_fallback(full_path: str):
         raise HTTPException(status_code=404, detail="Não encontrado.")
     candidate = DIST_DIR / full_path
     if full_path and candidate.is_file():
-        return FileResponse(candidate)
+        return _resposta_estatica(candidate)
     return _spa_index()
 
 
@@ -482,6 +494,25 @@ def _silent_shutdown_server(application) -> None:
             shutdown.encerrar(0)
 
     porta = int(os.environ.get("PRODMAKER_PORT") or 8188)
+    # -------------------------------------------------------------------------
+    # Prova de boot no app.log (hotfix 0.1.61 — "nada morre em silêncio").
+    # Sem esta linha, uma morte silenciosa do daemon não deixa rasto algum: só
+    # a linha de bootstrap do launcher, que não distingue "subiu" de "matou".
+    # Versão + porta + caminho/dist do frontend dizem EXATAMENTE o que subiu.
+    # -------------------------------------------------------------------------
+    try:
+        from datetime import datetime as _dt
+
+        _log = STORAGE / "logs" / "app.log"
+        _log.parent.mkdir(parents=True, exist_ok=True)
+        with open(_log, "a", encoding="utf-8") as _f:
+            _f.write(
+                f"{_dt.now().strftime('%Y-%m-%d %H:%M:%S')} [INFO] app.main: "
+                f"ProdMaker {APP_VERSION} ouvindo em http://127.0.0.1:{porta} "
+                f"(frontend: {DIST_DIR} — {'OK' if DIST_DIR.exists() else 'AUSENTE'})\n"
+            )
+    except Exception:
+        pass  # a prova de boot NUNCA pode impedir o servidor de subir
     # access_log=False: navegação (CSS/JS/SPA) e chamadas de API NÃO devem imprimir
     # linha de acesso por requisição no terminal — o terminal fica estático. O ciclo
     # de vida e os erros reais continuam saindo (uvicorn.error); o access log fica só

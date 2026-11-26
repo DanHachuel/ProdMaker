@@ -59,6 +59,14 @@ em console fechado gera EPIPE — ambos já derrubaram o app sem motivo. Por iss
    (absorve EPIPE e espelha os logs em `storage/logs/launcher_console.log`).
 4. **Isolamento de Workers:** processos filhos DEVEM ser iniciados com
    `CREATE_NEW_PROCESS_GROUP` (0x00000200) — não herdam os sinais do terminal.
+4b. **Terminal acompanha o Python (nada morre em silêncio):** o `run` espelha as
+   linhas novas de `storage/logs/app.log` no terminal (prefixo `[daemon]`, por
+   offset — NUNCA `stdio: 'pipe'`, que derrubaria o daemon com BrokenPipe na
+   morte do launcher); na morte do daemon o launcher imprime
+   `[ERRO FATAL] O servidor Python morreu.` + últimas linhas do log. O watchdog
+   reergue o daemon com teto (`MAX_REINICIOS`) — as constantes
+   `FALHAS_PARA_REINICIAR`/`MAX_REINICIOS` PRECISAM existir declaradas (sem elas
+   o reerguimento estourava ReferenceError silencioso — hotfix 0.1.61).
 5. **Trava de regressão:** `tests/test_launcher_keepalive.py` falha se qualquer
    uma das proteções acima for removida (listen HTTP como trava do terminal,
    daemon detached/unref/stdio-em-arquivo, binário base + PYTHONPATH, lock

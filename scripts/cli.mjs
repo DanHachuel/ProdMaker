@@ -28,7 +28,7 @@ try {
 const spawn = crossSpawn || nodeSpawn;
 const APP_DIR = path.join(PKG_ROOT, "app");
 const REQUIREMENTS = path.join(PKG_ROOT, "requirements.txt");
-const APP_VERSION = "0.1.60";
+const APP_VERSION = "0.1.61";
 const DEFAULT_PORT = 8188;
 
 const STORAGE_FOLDERS = ["state", "pages", "produtos", "artifacts", "downloads", "logs"];
@@ -228,7 +228,19 @@ function launcherDbg(mensagem) {
 }
 try {
   fs.mkdirSync(path.dirname(LAUNCHER_DEBUG_LOG), { recursive: true });
-  fs.writeFileSync(LAUNCHER_DEBUG_LOG, `[${new Date().toISOString()}] [NODE] launcher iniciado (pid ${process.pid}) cmd=${process.argv[2] || "run"} spawn=${crossSpawn ? "cross-spawn" : "nativo(fallback)"}\n`);
+  const linhaInicio = `[${new Date().toISOString()}] [NODE] launcher iniciado (pid ${process.pid}) cmd=${process.argv[2] || "run"} spawn=${crossSpawn ? "cross-spawn" : "nativo(fallback)"}\n`;
+  // APPEND com rotação por tamanho (NUNCA sobrescrever): a prova do que
+  // aconteceu entre sessões (morte silenciosa do daemon, sinal fantasma) vivia
+  // no rodapé do log anterior e era destruída a cada start.
+  let grande = false;
+  try {
+    grande = fs.statSync(LAUNCHER_DEBUG_LOG).size > 1024 * 1024;
+  } catch {}
+  if (grande) {
+    fs.writeFileSync(LAUNCHER_DEBUG_LOG, linhaInicio);
+  } else {
+    fs.appendFileSync(LAUNCHER_DEBUG_LOG, `\n===== nova sessao =====\n${linhaInicio}`);
+  }
 } catch {}
 // Encerramento CONTROLADO (Ctrl+C → matarAgora) seta esta flag; aí a mensagem de
 // morte NÃO é impressa (Ctrl+C continua limpo). Em qualquer OUTRA saída, o MOTIVO é
@@ -385,6 +397,13 @@ function pidVivo(pid) {
 
 const API_PORT_DEFAULT = 8189; // porta padrao do servidor
 const PORT_SCAN = 12; // faixa de fallback de portas
+// Watchdog: leituras ruins CONSECUTIVAS antes de reerguer o daemon e teto de
+// tentativas (sem teto, um daemon que nao sobe = loop infinito de spawns).
+// ATENCAO: estas constantes PRECISAM existir - o caminho de falha do watchdog
+// as referencia, e sem elas o reerguimento estourava ReferenceError silencioso
+// (hotfix 0.1.61: o watchdog NUNCA reergueu o daemon nas versoes anteriores).
+const FALHAS_PARA_REINICIAR = 3;
+const MAX_REINICIOS = 3;
 const CREATE_NEW_PROCESS_GROUP = 0x00000200; // flag Win32 — filhos NAO herdam os sinais do terminal
 
 // Site-packages do venv (Windows: venv/Lib/site-packages; Unix: lib/pythonX.Y/...).
@@ -756,6 +775,48 @@ function spawnDaemon(home, rt, apiPort) {
   filho.unref(); // o Node pode sair sem arrastar o daemon junto
   return filho;
 }
+// ---------------------------------------------------------------------------
+// ESPELHO DO LOG DO DAEMON no terminal (hotfix 0.1.61 — "terminal acompanha o
+// Python"). O daemon escreve em storage/logs/app.log via stdio em FD; aqui as
+// linhas NOVAS são lidas do arquivo (por offset) e ecoadas com o prefixo
+// [daemon]. NUNCA usa stdio 'pipe': um pipe seria fechado na morte do launcher
+// e o Python levaria BrokenPipe junto — o daemon TEM de sobreviver ao launcher.
+// Melhor-esforço: o arquivo é a fonte da verdade; o espelho não pode derrubar
+// nada (guarda de console + try/catch em cada passo).
+// ---------------------------------------------------------------------------
+function espelharLogsDoDaemon(logPath) {
+  let offset = 0;
+  try {
+    offset = fs.statSync(logPath).size;
+  } catch {}
+  const timer = setInterval(() => {
+    let st = null;
+    try {
+      st = fs.statSync(logPath);
+    } catch {
+      return; // arquivo momentaneamente indisponivel: tenta no proximo tick
+    }
+    if (st.size <= offset) return;
+    try {
+      const buf = Buffer.alloc(st.size - offset);
+      const fd = fs.openSync(logPath, "r");
+      fs.readSync(fd, buf, 0, buf.length, offset);
+      fs.closeSync(fd);
+      offset = st.size;
+      for (const linha of buf.toString("utf8").split(/\r?\n/)) {
+        if (linha.trim()) process.stdout.write(`[daemon] ${linha}\n`);
+      }
+    } catch {
+      // rotacao/troca de arquivo: realinha o offset e segue
+      try {
+        offset = fs.statSync(logPath).size;
+      } catch {}
+    }
+  }, 1000);
+  timer.unref(); // quem segura o event loop é a ANCORA, nunca este espelho
+  return timer;
+}
+
 function printUrlBox(port, masterCode) {
   const url = `http://localhost:${port}`;
   const line = (text) => `|  ${text}${" ".repeat(Math.max(0, 43 - text.length))}|`;
@@ -1144,6 +1205,40 @@ async function commandRun() {
     process.exit(1);
   }
   filho.on("error", (e) => console.error(`[ERRO FATAL] falha ao iniciar o Python: ${e.message}`));
+
+  // -------------------------------------------------------------------------
+  // ACOMPANHAR O PYTHON (o terminal não pode ficar cego). Duas peças:
+  //  (a) ESPELHO: as linhas NOVAS de storage/logs/app.log são ecoadas no
+  //      terminal com o prefixo [daemon]. É feito lendo o ARQUIVO (offset),
+  //      nunca com stdio 'pipe': um pipe seria fechado quando o launcher
+  //      morre e o Python levaria BrokenPipe junto — o daemon precisa sobreviver
+  //      ao launcher. O arquivo é a verdade; o espelho é melhor-esforço.
+  //  (b) ALARME: se o daemon morrer, o launcher GRITA na hora
+  //      ("[ERRO FATAL] O servidor Python morreu." + código/sinal + últimas
+  //      linhas do app.log) — morte silenciosa é o bug que este hotfix enterra.
+  // -------------------------------------------------------------------------
+  let daemonMorreu = false;
+  const vigiarDaemon = (filhoAtual) => {
+    filhoAtual.on("exit", (code, signal) => {
+      daemonMorreu = true;
+      const porque = signal ? `sinal ${signal}` : `codigo ${code ?? "null"}`;
+      console.error(`\n[ERRO FATAL] O servidor Python morreu (${porque}).`);
+      launcherDbg(`[DAEMON] python pid=${filhoAtual.pid} morreu (${porque}) — watchdog decide o reinicio`);
+      try {
+        const linhas = fs
+          .readFileSync(storagePath(home, "logs", "app.log"), "utf8")
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .slice(-10);
+        for (const l of linhas) console.error("  " + l);
+      } catch {
+        console.error("  (app.log indisponivel)");
+      }
+    });
+  };
+  vigiarDaemon(filho);
+  espelharLogsDoDaemon(storagePath(home, "logs", "app.log"));
+
   escreverPidGlobal(home, process.pid, backendPid, port, port);
   launcherDbg(`[DAEMON] python pid=${backendPid} (porta ${port}) — lock em ${pidGlobalPath(home)}`);
 
@@ -1188,12 +1283,17 @@ async function commandRun() {
   let falhasSaude = 0;
   let reinicios = 0;
   const watchdog = setInterval(async () => {
-    if (await waitReady(port, 4000)) {
+    launcherDbg(`[WATCHDOG] tick pid=${backendPid} porta=${port}`);
+    const saudavel = await waitReady(port, 4000);
+    if (saudavel) {
       falhasSaude = 0;
       reinicios = 0;
       return;
     }
     falhasSaude += 1;
+    // Log de cada batida: sem isso, uma morte do daemon (ou um watchdog que não
+    // reage) era indebugável — o terminal só via o silêncio.
+    launcherDbg(`[WATCHDOG] falha ${falhasSaude}/${FALHAS_PARA_REINICIAR} — daemon ${daemonMorreu ? "MORTO" : "mudo"} (pid ${backendPid}) porta ${port}`);
     if (falhasSaude < FALHAS_PARA_REINICIAR) return;
     if (reinicios >= MAX_REINICIOS) {
       clearInterval(watchdog);
@@ -1216,9 +1316,11 @@ async function commandRun() {
       return;
     }
     reinicios += 1;
+    launcherDbg(`[WATCHDOG] reiniciando daemon (tentativa ${reinicios}/${MAX_REINICIOS}) na porta ${port}`);
     console.error(`[ProdMaker] Servidor não responde - reiniciando (${reinicios}/${MAX_REINICIOS})...`);
     const novo = spawnDaemon(home, rt, port);
     backendPid = novo.pid;
+    vigiarDaemon(novo); // o daemon reerguido também é vigiado (morte não passa em silêncio)
     escreverPidGlobal(home, process.pid, backendPid, port, port);
   }, 10000);
   watchdog.unref();
